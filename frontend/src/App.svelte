@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { deckStore } from './stores/deckStore';
-  import Header from './lib/components/Header.svelte';
+  import Sidebar from './lib/components/Sidebar.svelte';
   import DeckList from './lib/components/DeckList.svelte';
   import DeckBuilder from './lib/components/DeckBuilder.svelte';
   import NewDeckModal from './lib/components/NewDeckModal.svelte';
@@ -40,15 +40,17 @@
   }
 </script>
 
-<Header onNavigate={handleNavigate} />
+<div class="app-layout">
+  <Sidebar onNavigate={handleNavigate} />
 
-<main class="main-content">
-  {#if currentView === 'home'}
-    <DeckList onNavigate={handleNavigate} onEdit={handleEditDeck} />
-  {:else if currentView === 'builder'}
-    <DeckBuilder onBack={handleBackToDecks} />
-  {/if}
-</main>
+  <main class="main-content">
+    {#if currentView === 'home'}
+      <DeckList onNavigate={handleNavigate} onEdit={handleEditDeck} />
+    {:else if currentView === 'builder'}
+      <DeckBuilder onBack={handleBackToDecks} />
+    {/if}
+  </main>
+</div>
 
 {#if showNewDeckModal}
   <NewDeckModal
@@ -58,9 +60,15 @@
 {/if}
 
 <style>
+  .app-layout {
+    display: flex;
+    min-height: 100vh;
+  }
+
   .main-content {
     flex: 1;
     display: flex;
     flex-direction: column;
+    overflow-x: hidden;
   }
 </style>
