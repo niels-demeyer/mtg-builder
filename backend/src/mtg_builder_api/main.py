@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime
+from typing import Optional, Any
+from datetime import datetime, timezone
 import uuid
 
 app = FastAPI(title="MTG Builder API")
@@ -16,8 +16,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Type alias for deck storage
+DeckDict = dict[str, str | list[dict[str, Any]]]
+
 # In-memory storage (replace with database in production)
-decks_db: dict[str, dict] = {}
+decks_db: dict[str, DeckDict] = {}
 
 
 class CardInDeck(BaseModel):
@@ -26,9 +29,9 @@ class CardInDeck(BaseModel):
     quantity: int
     mana_cost: Optional[str] = None
     type_line: Optional[str] = None
-    image_uris: Optional[dict] = None
-    card_faces: Optional[list] = None
-    colors: Optional[list] = None
+    image_uris: Optional[dict[str, Any]] = None
+    card_faces: Optional[list[dict[str, Any]]] = None
+    colors: Optional[list[str]] = None
     cmc: Optional[float] = None
 
 
@@ -55,29 +58,34 @@ class Deck(BaseModel):
     updated_at: str
 
 
+def get_utc_now() -> str:
+    """Get current UTC time as ISO format string."""
+    return datetime.now(timezone.utc).isoformat()
+
+
 @app.get("/")
-async def root():
+async def root() -> dict[str, str]:
     return {"message": "Welcome to MTG Builder API"}
 
 
 @app.get("/health")
-async def health_check():
+async def health_check() -> dict[str, str]:
     return {"status": "healthy"}
 
 
 @app.get("/api/decks", response_model=list[Deck])
-async def get_decks():
+async def get_decks() -> list[DeckDict]:
     """Get all decks"""
     return list(decks_db.values())
 
 
 @app.post("/api/decks", response_model=Deck)
-async def create_deck(deck: DeckCreate):
+async def create_deck(deck: DeckCreate) -> DeckDict:
     """Create a new deck"""
     deck_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    now = get_utc_now()
     
-    new_deck = {
+    new_deck: DeckDict = {
         "id": deck_id,
         "name": deck.name,
         "format": deck.format,
@@ -92,7 +100,7 @@ async def create_deck(deck: DeckCreate):
 
 
 @app.get("/api/decks/{deck_id}", response_model=Deck)
-async def get_deck(deck_id: str):
+async def get_deck(deck_id: str) -> DeckDict:
     """Get a specific deck"""
     if deck_id not in decks_db:
         raise HTTPException(status_code=404, detail="Deck not found")
@@ -100,7 +108,7 @@ async def get_deck(deck_id: str):
 
 
 @app.put("/api/decks/{deck_id}", response_model=Deck)
-async def update_deck(deck_id: str, deck_update: DeckUpdate):
+async def update_deck(deck_id: str, deck_update: DeckUpdate) -> DeckDict:
     """Update a deck"""
     if deck_id not in decks_db:
         raise HTTPException(status_code=404, detail="Deck not found")
@@ -116,13 +124,13 @@ async def update_deck(deck_id: str, deck_update: DeckUpdate):
     if deck_update.cards is not None:
         deck["cards"] = [card.model_dump() for card in deck_update.cards]
     
-    deck["updated_at"] = datetime.utcnow().isoformat()
+    deck["updated_at"] = get_utc_now()
     
     return deck
 
 
 @app.delete("/api/decks/{deck_id}")
-async def delete_deck(deck_id: str):
+async def delete_deck(deck_id: str) -> dict[str, str]:
     """Delete a deck"""
     if deck_id not in decks_db:
         raise HTTPException(status_code=404, detail="Deck not found")
@@ -132,7 +140,7 @@ async def delete_deck(deck_id: str):
 
 
 @app.post("/api/decks/{deck_id}/cards", response_model=Deck)
-async def add_card_to_deck(deck_id: str, card: CardInDeck):
+async def add_card_to_deck(deck_id: str, card: CardInDeck) -> DeckDict:
     """Add a card to a deck"""
     if deck_id not in decks_db:
         raise HTTPException(status_code=404, detail="Deck not found")
@@ -141,26 +149,32 @@ async def add_card_to_deck(deck_id: str, card: CardInDeck):
     cards = deck["cards"]
     
     # Check if card already exists
-    existing_card = next((c for c in cards if c["id"] == card.id), None)
+    if isinstance(cards, list):
+        existing_card: dict[str, Any] | None = next(
+            (c for c in cards if c.get("id") == card.id), 
+            None
+        )
+        
+        if existing_card:
+            existing_card["quantity"] += card.quantity
+        else:
+            cards.append(card.model_dump())
     
-    if existing_card:
-        existing_card["quantity"] += card.quantity
-    else:
-        cards.append(card.model_dump())
-    
-    deck["updated_at"] = datetime.utcnow().isoformat()
+    deck["updated_at"] = get_utc_now()
     
     return deck
 
 
 @app.delete("/api/decks/{deck_id}/cards/{card_id}", response_model=Deck)
-async def remove_card_from_deck(deck_id: str, card_id: str):
+async def remove_card_from_deck(deck_id: str, card_id: str) -> DeckDict:
     """Remove a card from a deck"""
     if deck_id not in decks_db:
         raise HTTPException(status_code=404, detail="Deck not found")
     
     deck = decks_db[deck_id]
-    deck["cards"] = [c for c in deck["cards"] if c["id"] != card_id]
-    deck["updated_at"] = datetime.utcnow().isoformat()
+    cards = deck["cards"]
+    if isinstance(cards, list):
+        deck["cards"] = [c for c in cards if c.get("id") != card_id]
+    deck["updated_at"] = get_utc_now()
     
     return deck
