@@ -1,32 +1,45 @@
 import { writable } from "svelte/store";
+import type {
+  Deck,
+  DeckStoreState,
+  CardInDeck,
+  DeckUpdates,
+  ScryfallCard,
+} from "$lib/types";
 
 function createDeckStore() {
-  const { subscribe, set, update } = writable({
+  const initialState: DeckStoreState = {
     decks: [],
     currentDeck: null,
     loading: false,
     error: null,
-  });
+  };
+
+  const { subscribe, update } = writable<DeckStoreState>(initialState);
 
   return {
     subscribe,
 
     // Load decks from localStorage
-    loadDecks: () => {
+    loadDecks: (): void => {
       const saved = localStorage.getItem("mtg-decks");
       if (saved) {
-        update((state) => ({ ...state, decks: JSON.parse(saved) }));
+        update((state) => ({ ...state, decks: JSON.parse(saved) as Deck[] }));
       }
     },
 
     // Save decks to localStorage
-    saveToStorage: (decks) => {
+    saveToStorage: (decks: Deck[]): void => {
       localStorage.setItem("mtg-decks", JSON.stringify(decks));
     },
 
     // Create a new deck
-    createDeck: (name, format = "Standard", description = "") => {
-      const newDeck = {
+    createDeck: (
+      name: string,
+      format: string = "Standard",
+      description: string = ""
+    ): Deck => {
+      const newDeck: Deck = {
         id: crypto.randomUUID(),
         name,
         format,
@@ -46,7 +59,7 @@ function createDeckStore() {
     },
 
     // Select a deck for editing
-    selectDeck: (deckId) => {
+    selectDeck: (deckId: string): void => {
       update((state) => {
         const deck = state.decks.find((d) => d.id === deckId);
         return { ...state, currentDeck: deck || null };
@@ -54,11 +67,11 @@ function createDeckStore() {
     },
 
     // Update current deck
-    updateDeck: (updates) => {
+    updateDeck: (updates: DeckUpdates): void => {
       update((state) => {
         if (!state.currentDeck) return state;
 
-        const updatedDeck = {
+        const updatedDeck: Deck = {
           ...state.currentDeck,
           ...updates,
           updatedAt: new Date().toISOString(),
@@ -74,14 +87,17 @@ function createDeckStore() {
     },
 
     // Add card to current deck
-    addCard: (card, quantity = 1) => {
+    addCard: (
+      card: Omit<CardInDeck, "quantity">,
+      quantity: number = 1
+    ): void => {
       update((state) => {
         if (!state.currentDeck) return state;
 
         const existingIndex = state.currentDeck.cards.findIndex(
           (c) => c.id === card.id
         );
-        let cards;
+        let cards: CardInDeck[];
 
         if (existingIndex >= 0) {
           cards = state.currentDeck.cards.map((c, i) =>
@@ -91,7 +107,7 @@ function createDeckStore() {
           cards = [...state.currentDeck.cards, { ...card, quantity }];
         }
 
-        const updatedDeck = {
+        const updatedDeck: Deck = {
           ...state.currentDeck,
           cards,
           updatedAt: new Date().toISOString(),
@@ -107,13 +123,13 @@ function createDeckStore() {
     },
 
     // Remove card from current deck
-    removeCard: (cardId) => {
+    removeCard: (cardId: string): void => {
       update((state) => {
         if (!state.currentDeck) return state;
 
         const cards = state.currentDeck.cards.filter((c) => c.id !== cardId);
 
-        const updatedDeck = {
+        const updatedDeck: Deck = {
           ...state.currentDeck,
           cards,
           updatedAt: new Date().toISOString(),
@@ -129,7 +145,7 @@ function createDeckStore() {
     },
 
     // Update card quantity
-    updateCardQuantity: (cardId, quantity) => {
+    updateCardQuantity: (cardId: string, quantity: number): void => {
       update((state) => {
         if (!state.currentDeck) return state;
 
@@ -140,7 +156,7 @@ function createDeckStore() {
                 c.id === cardId ? { ...c, quantity } : c
               );
 
-        const updatedDeck = {
+        const updatedDeck: Deck = {
           ...state.currentDeck,
           cards,
           updatedAt: new Date().toISOString(),
@@ -156,7 +172,7 @@ function createDeckStore() {
     },
 
     // Delete a deck
-    deleteDeck: (deckId) => {
+    deleteDeck: (deckId: string): void => {
       update((state) => {
         const decks = state.decks.filter((d) => d.id !== deckId);
         localStorage.setItem("mtg-decks", JSON.stringify(decks));
@@ -170,7 +186,7 @@ function createDeckStore() {
     },
 
     // Clear current deck selection
-    clearCurrentDeck: () => {
+    clearCurrentDeck: (): void => {
       update((state) => ({ ...state, currentDeck: null }));
     },
   };

@@ -1,39 +1,40 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte';
-  import { deckStore } from './stores/deckStore.js';
+  import { deckStore } from './stores/deckStore';
   import Header from './lib/components/Header.svelte';
   import DeckList from './lib/components/DeckList.svelte';
   import DeckBuilder from './lib/components/DeckBuilder.svelte';
   import NewDeckModal from './lib/components/NewDeckModal.svelte';
+  import type { Deck } from './lib/types';
 
-  let currentView = 'home';
+  let currentView: 'home' | 'builder' = 'home';
   let showNewDeckModal = false;
 
   onMount(() => {
     deckStore.loadDecks();
   });
 
-  function handleNavigate(view) {
+  function handleNavigate(view: string): void {
     if (view === 'new-deck') {
       showNewDeckModal = true;
     } else if (view === 'home') {
       deckStore.clearCurrentDeck();
       currentView = 'home';
-    } else {
-      currentView = view;
+    } else if (view === 'builder') {
+      currentView = 'builder';
     }
   }
 
-  function handleNewDeckComplete(deck) {
+  function handleNewDeckComplete(_deck: Deck): void {
     showNewDeckModal = false;
     currentView = 'builder';
   }
 
-  function handleEditDeck(deck) {
+  function handleEditDeck(_deck: Deck): void {
     currentView = 'builder';
   }
 
-  function handleBackToDecks() {
+  function handleBackToDecks(): void {
     deckStore.clearCurrentDeck();
     currentView = 'home';
   }
