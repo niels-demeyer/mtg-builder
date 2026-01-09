@@ -10,7 +10,7 @@
   import NewDeckModal from './lib/components/NewDeckModal.svelte';
   import type { Deck } from './lib/types';
 
-  type ViewType = 'home' | 'decks' | 'builder' | 'explorer' | 'training';
+  type ViewType = 'home' | 'decks' | 'builder' | 'explorer' | 'training' | 'settings' | 'collection' | 'import-export';
   
   const routes: Record<string, ViewType> = {
     '/': 'home',
@@ -18,11 +18,14 @@
     '/decks': 'decks',
     '/decks/builder': 'builder',
     '/explorer': 'explorer',
-    '/training': 'training'
+    '/training': 'training',
+    '/settings': 'settings',
+    '/collection': 'collection',
+    '/import-export': 'import-export'
   };
 
-  let currentView: ViewType = 'home';
-  let showNewDeckModal = false;
+  let currentView = $state<ViewType>('home');
+  let showNewDeckModal = $state(false);
 
   function getViewFromPath(): ViewType {
     const path = window.location.pathname;
@@ -65,7 +68,18 @@
       navigateTo('/explorer');
     } else if (view === 'training') {
       navigateTo('/training');
+    } else if (view === 'settings') {
+      navigateTo('/settings');
+    } else if (view === 'collection') {
+      navigateTo('/collection');
+    } else if (view === 'import-export') {
+      navigateTo('/import-export');
     }
+  }
+
+  function handleSelectDeck(deckId: string): void {
+    deckStore.selectDeck(deckId);
+    navigateTo('/decks/builder');
   }
 
   function handleNewDeckComplete(_deck: Deck): void {
@@ -81,10 +95,25 @@
     deckStore.clearCurrentDeck();
     navigateTo('/decks');
   }
+
+  // Resizable sidebar
+  let sidebarWidth = $state(260);
+  const MIN_SIDEBAR_WIDTH = 200;
+  const MAX_SIDEBAR_WIDTH = 400;
+
+  function handleSidebarResize(delta: number): void {
+    sidebarWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, sidebarWidth + delta));
+  }
 </script>
 
 <div class="app-layout">
-  <Sidebar onNavigate={handleNavigate} />
+  <Sidebar 
+    onNavigate={handleNavigate} 
+    onSelectDeck={handleSelectDeck}
+    currentView={currentView}
+    width={sidebarWidth}
+    onResize={handleSidebarResize}
+  />
 
   <main class="main-content">
     {#if currentView === 'home'}
@@ -97,6 +126,21 @@
       <Explorer />
     {:else if currentView === 'training'}
       <Training />
+    {:else if currentView === 'settings'}
+      <div class="placeholder-view">
+        <h2>Settings</h2>
+        <p>Settings view coming soon...</p>
+      </div>
+    {:else if currentView === 'collection'}
+      <div class="placeholder-view">
+        <h2>My Collection</h2>
+        <p>Collection management coming soon...</p>
+      </div>
+    {:else if currentView === 'import-export'}
+      <div class="placeholder-view">
+        <h2>Import / Export</h2>
+        <p>Import and export functionality coming soon...</p>
+      </div>
     {/if}
   </main>
 </div>
@@ -112,6 +156,7 @@
   .app-layout {
     display: flex;
     min-height: 100vh;
+    background: var(--color-bg);
   }
 
   .main-content {
@@ -119,5 +164,27 @@
     display: flex;
     flex-direction: column;
     overflow-x: hidden;
+    background: var(--color-bg);
+  }
+
+  .placeholder-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    text-align: center;
+  }
+
+  .placeholder-view h2 {
+    font-size: 1.5rem;
+    color: hsl(var(--foreground));
+    margin-bottom: 0.5rem;
+  }
+
+  .placeholder-view p {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.9375rem;
   }
 </style>
