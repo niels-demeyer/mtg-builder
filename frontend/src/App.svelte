@@ -2,12 +2,15 @@
   import { onMount } from 'svelte';
   import { deckStore } from './stores/deckStore';
   import Sidebar from './lib/components/Sidebar.svelte';
+  import Home from './lib/components/Home.svelte';
   import DeckList from './lib/components/DeckList.svelte';
   import DeckBuilder from './lib/components/DeckBuilder.svelte';
+  import Explorer from './lib/components/Explorer.svelte';
+  import Training from './lib/components/Training.svelte';
   import NewDeckModal from './lib/components/NewDeckModal.svelte';
   import type { Deck } from './lib/types';
 
-  let currentView: 'home' | 'builder' = 'home';
+  let currentView: 'home' | 'decks' | 'builder' | 'explorer' | 'training' = 'home';
   let showNewDeckModal = false;
 
   onMount(() => {
@@ -20,8 +23,15 @@
     } else if (view === 'home') {
       deckStore.clearCurrentDeck();
       currentView = 'home';
+    } else if (view === 'decks') {
+      deckStore.clearCurrentDeck();
+      currentView = 'decks';
     } else if (view === 'builder') {
       currentView = 'builder';
+    } else if (view === 'explorer') {
+      currentView = 'explorer';
+    } else if (view === 'training') {
+      currentView = 'training';
     }
   }
 
@@ -36,7 +46,7 @@
 
   function handleBackToDecks(): void {
     deckStore.clearCurrentDeck();
-    currentView = 'home';
+    currentView = 'decks';
   }
 </script>
 
@@ -45,9 +55,15 @@
 
   <main class="main-content">
     {#if currentView === 'home'}
+      <Home onNavigate={handleNavigate} />
+    {:else if currentView === 'decks'}
       <DeckList onNavigate={handleNavigate} onEdit={handleEditDeck} />
     {:else if currentView === 'builder'}
       <DeckBuilder onBack={handleBackToDecks} />
+    {:else if currentView === 'explorer'}
+      <Explorer />
+    {:else if currentView === 'training'}
+      <Training />
     {/if}
   </main>
 </div>
