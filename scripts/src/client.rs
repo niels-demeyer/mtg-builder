@@ -61,6 +61,34 @@ impl ScryfallClient {
         response.error_for_status()?.json().await
     }
 
+    /// Fetches and prints the full JSON response for a query
+    /// Validates the query before sending to ensure correct syntax
+    pub async fn print_full_json_response(&self, query: &str) -> Result<(), ScryfallError> {
+        // Validate query before sending
+        self.validator.validate(query)?;
+
+        let encoded_query = self.validator.encode_query(query);
+        let url = format!(
+            "https://api.scryfall.com/cards/search?q={}",
+            encoded_query
+        );
+
+        self.rate_limiter.acquire().await;
+
+        let response = self
+            .client
+            .get(&url)
+            .headers(self.headers.clone())
+            .send()
+            .await?;
+
+        let json: serde_json::Value = response.error_for_status()?.json().await?;
+        println!("Query: {}", query);
+        println!("{}", serde_json::to_string_pretty(&json).unwrap());
+
+        Ok(())
+    }
+
     /// Fetch all cards for a single query (paginated - must be sequential)
     /// Validates the query before sending to ensure correct syntax
     pub async fn fetch_all_cards(&self, query: &str) -> Result<Vec<Card>, ScryfallError> {

@@ -41,6 +41,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     
+    // Test the print_full_json_response function
+    println!("\n=== Testing print_full_json_response ===\n");
+    client
+        .print_full_json_response("name:\"Lightning Bolt\" t:instant")
+        .await?;
+
     println!("\n=== Starting Fetch ===\n");
     println!("Fetching {} validated queries...\n", queries.len());
     
@@ -61,15 +67,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Total cards fetched: {}", total);
     println!("Total time: {:.2}s", start.elapsed().as_secs_f64());
 
-    // Print first 10 cards from each successful query
-    for (i, result) in results.iter().enumerate() {
-        if let Ok(cards) = result {
-            println!("\nFirst 10 cards from query {}:", i + 1);
-            for card in cards.iter().take(10) {
-                println!("  - {} ({}, {})", card.name, card.set_name, card.rarity);
-            }
-        }
-    }
+    // // Print first 10 cards from each successful query
+    // for (i, result) in results.iter().enumerate() {
+    //     if let Ok(cards) = result {
+    //         println!("\nFirst 10 cards from query {}:", i + 1);
+    //         for card in cards.iter().take(10) {
+    //             println!("  - {} ({}, {})", card.name, card.set_name, card.rarity);
+    //         }
+    //     }
+    // }
 
     Ok(())
 }
