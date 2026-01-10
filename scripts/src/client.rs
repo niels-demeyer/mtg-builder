@@ -2,6 +2,7 @@ use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::database::Database;
 use crate::error::{QueryValidationError, ScryfallError};
 use crate::models::{Card, ScryfallSearchResponse};
 use crate::rate_limiter::RateLimiter;
@@ -139,6 +140,60 @@ impl ScryfallClient {
         }
 
         Ok(all_pages)
+    }
+
+    /// Fetches all pages of JSON data for a query and stores them in the database immediately
+    /// as each page is fetched. This ensures data is persisted even if the process is interrupted.
+    /// Returns the total number of cards stored.
+    pub async fn fetch_and_store(
+        &self,
+        query: &str,
+        db: &Database,
+    ) -> Result<usize, ScryfallError> {
+        // Validate query before sending
+        self.validator.validate(query)?;
+
+        let encoded_query = self.validator.encode_query(query);
+        let mut next_url: Option<String> = Some(format!(
+            "https://api.scryfall.com/cards/search?q={}",
+            encoded_query
+        ));
+
+        let mut page = 1;
+        let mut total_stored = 0;
+        let start = std::time::Instant::now();
+
+        while let Some(url) = next_url {
+            println!("Fetching page {}...", page);
+
+            let json = self.fetch_json_page(&url).await?;
+
+            let card_count = json["data"].as_array().map(|a| a.len()).unwrap_or(0);
+            let total = json["total_cards"].as_u64().unwrap_or(0);
+
+            // Store cards immediately after fetching this page
+            let stored = db
+                .upsert_cards_from_response(&json)
+                .await
+                .map_err(|e| ScryfallError::DatabaseError(e.to_string()))?;
+            total_stored += stored;
+
+            println!(
+                "  Got {} cards, stored {} (total: {}) [{:.2}s elapsed]",
+                card_count,
+                stored,
+                total,
+                start.elapsed().as_secs_f64()
+            );
+
+            let has_more = json["has_more"].as_bool().unwrap_or(false);
+            let next_page = json["next_page"].as_str().map(|s| s.to_string());
+
+            next_url = if has_more { next_page } else { None };
+            page += 1;
+        }
+
+        Ok(total_stored)
     }
 
     /// Fetch all cards for a single query (paginated - must be sequential)

@@ -9,20 +9,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
 
     // Query to fetch cards
-    let query = "name:\"Lightning Bolt\" t:instant";
+    let query = "t:creature";
 
     println!("=== Fetching cards and storing to database ===\n");
     println!("Query: {}", query);
 
-    // Fetch all pages of JSON data
-    let pages = client.fetch_all_json(query).await?;
-
-    // Store each page's cards in the database
-    let mut total_stored = 0;
-    for page in &pages {
-        let count = db.upsert_cards_from_response(page).await?;
-        total_stored += count;
-    }
+    // Fetch and store cards immediately as each page is retrieved
+    // This ensures data is persisted even if the process is interrupted
+    let total_stored = client.fetch_and_store(query, &db).await?;
 
     println!("\n=== Results ===");
     println!("Total cards stored in database: {}", total_stored);
@@ -30,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Total time: {:.2}s", start.elapsed().as_secs_f64());
 
     // Example: search for cards by name
-    println!("\n=== Searching database for 'Lightning' ===");
+    println!("\n=== Searching database for {query} ===");
     let results = db.search_by_name("Lightning").await?;
     for card in results.iter().take(5) {
         println!(

@@ -47,6 +47,7 @@ impl std::error::Error for QueryValidationError {}
 pub enum ScryfallError {
     ValidationError(QueryValidationError),
     RequestError(Arc<reqwest::Error>),
+    DatabaseError(String),
 }
 
 impl std::fmt::Display for ScryfallError {
@@ -54,6 +55,7 @@ impl std::fmt::Display for ScryfallError {
         match self {
             ScryfallError::ValidationError(e) => write!(f, "Query validation failed: {}", e),
             ScryfallError::RequestError(e) => write!(f, "Request failed: {}", e),
+            ScryfallError::DatabaseError(e) => write!(f, "Database error: {}", e),
         }
     }
 }
