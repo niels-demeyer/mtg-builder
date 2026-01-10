@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
 
     // Query to fetch cards
-    let query = "t:creature";
+    let query = "t:land";
 
     println!("=== Fetching cards and storing to database ===\n");
     println!("Query: {}", query);
