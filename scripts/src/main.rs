@@ -1,80 +1,45 @@
 use std::time::Instant;
 
-use scripts::ScryfallClient;
+use scripts::{Database, ScryfallClient};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = ScryfallClient::new();
+    let db = Database::new("cards.db").await?;
     let start = Instant::now();
 
-    // // Example queries - includes valid and invalid queries to demonstrate validation
-    // let queries = vec![
-    //     "type:creature",           // Valid
-    //     "c:red cmc<=3",            // Valid: red cards with CMC 3 or less
-    //     "set:neo rarity:rare",     // Valid: rare cards from Kamigawa: Neon Dynasty
-    // ];
+    // Query to fetch cards
+    let query = "name:\"Lightning Bolt\" t:instant";
 
-    // // Demonstrate validation-only (no requests sent)
-    // println!("=== Query Validation ===");
-    // for query in &queries {
-    //     match client.validate_query(query) {
-    //         Ok(()) => println!("✓ Valid: '{}'", query),
-    //         Err(e) => println!("✗ Invalid: '{}' - {}", query, e),
-    //     }
-    // }
-    
-    // // Test some invalid queries
-    // let invalid_queries = vec![
-    //     "",                        // Empty query
-    //     "(type:creature",          // Unbalanced parentheses
-    //     "or type:creature",        // Leading operator
-    //     "type:creature and",       // Trailing operator
-    //     "type:creature and and c:red", // Consecutive operators
-    //     "name:\"Lightning Bolt",   // Unbalanced quotes
-    // ];
-    
-    // println!("\n=== Invalid Query Examples ===");
-    // for query in &invalid_queries {
-    //     match client.validate_query(query) {
-    //         Ok(()) => println!("✓ Valid: '{}'", query),
-    //         Err(e) => println!("✗ Invalid: '{}' - {}", query, e),
-    //     }
-    // }
-    
-    // Test the print_full_json_response function
-    println!("\n=== Testing print_full_json_response ===\n");
-    client
-        .print_full_json_response("name:\"Lightning Bolt\" t:instant")
-        .await?;
-    // println!("\n=== Starting Fetch ===\n");
-    // println!("Fetching {} validated queries...\n", queries.len());
-    
-    // let results = client.fetch_multiple_queries(queries).await;
+    println!("=== Fetching cards and storing to database ===\n");
+    println!("Query: {}", query);
 
-    // let mut total = 0;
-    // for (i, result) in results.iter().enumerate() {
-    //     match result {
-    //         Ok(cards) => {
-    //             println!("Query {} fetched {} cards", i + 1, cards.len());
-    //             total += cards.len();
-    //         }
-    //         Err(e) => println!("Query {} failed: {}", i + 1, e),
-    //     }
-    // }
+    // Fetch all pages of JSON data
+    let pages = client.fetch_all_json(query).await?;
 
-    // println!("\n=== Results ===");
-    // println!("Total cards fetched: {}", total);
-    // println!("Total time: {:.2}s", start.elapsed().as_secs_f64());
+    // Store each page's cards in the database
+    let mut total_stored = 0;
+    for page in &pages {
+        let count = db.upsert_cards_from_response(page).await?;
+        total_stored += count;
+    }
 
-    // // Print first 10 cards from each successful query
-    // for (i, result) in results.iter().enumerate() {
-    //     if let Ok(cards) = result {
-    //         println!("\nFirst 10 cards from query {}:", i + 1);
-    //         for card in cards.iter().take(10) {
-    //             println!("  - {} ({}, {})", card.name, card.set_name, card.rarity);
-    //         }
-    //     }
-    // }
+    println!("\n=== Results ===");
+    println!("Total cards stored in database: {}", total_stored);
+    println!("Total cards in database: {}", db.get_card_count().await?);
+    println!("Total time: {:.2}s", start.elapsed().as_secs_f64());
+
+    // Example: search for cards by name
+    println!("\n=== Searching database for 'Lightning' ===");
+    let results = db.search_by_name("Lightning").await?;
+    for card in results.iter().take(5) {
+        println!(
+            "  - {} ({}, {})",
+            card["name"].as_str().unwrap_or("Unknown"),
+            card["set_name"].as_str().unwrap_or("Unknown"),
+            card["rarity"].as_str().unwrap_or("Unknown")
+        );
+    }
 
     Ok(())
 }

@@ -61,6 +61,21 @@ impl ScryfallClient {
         response.error_for_status()?.json().await
     }
 
+    /// Fetches a single page of JSON response
+    async fn fetch_json_page(&self, url: &str) -> Result<serde_json::Value, ScryfallError> {
+        self.rate_limiter.acquire().await;
+
+        let response = self
+            .client
+            .get(url)
+            .headers(self.headers.clone())
+            .send()
+            .await?;
+
+        let json: serde_json::Value = response.error_for_status()?.json().await?;
+        Ok(json)
+    }
+
     /// Fetches and prints the full JSON response for a query
     /// Validates the query before sending to ensure correct syntax
     pub async fn print_full_json_response(&self, query: &str) -> Result<(), ScryfallError> {
@@ -73,20 +88,57 @@ impl ScryfallClient {
             encoded_query
         );
 
-        self.rate_limiter.acquire().await;
-
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.headers.clone())
-            .send()
-            .await?;
-
-        let json: serde_json::Value = response.error_for_status()?.json().await?;
+        let json = self.fetch_json_page(&url).await?;
         println!("Query: {}", query);
         println!("{}", serde_json::to_string_pretty(&json).unwrap());
 
         Ok(())
+    }
+
+    /// Fetches all pages of JSON data for a query and returns them
+    /// Validates the query before sending to ensure correct syntax
+    pub async fn fetch_all_json(
+        &self,
+        query: &str,
+    ) -> Result<Vec<serde_json::Value>, ScryfallError> {
+        // Validate query before sending
+        self.validator.validate(query)?;
+
+        let encoded_query = self.validator.encode_query(query);
+        let mut all_pages: Vec<serde_json::Value> = Vec::new();
+        let mut next_url: Option<String> = Some(format!(
+            "https://api.scryfall.com/cards/search?q={}",
+            encoded_query
+        ));
+
+        let mut page = 1;
+        let start = std::time::Instant::now();
+
+        while let Some(url) = next_url {
+            println!("Fetching page {}...", page);
+
+            let json = self.fetch_json_page(&url).await?;
+
+            let card_count = json["data"].as_array().map(|a| a.len()).unwrap_or(0);
+            let total = json["total_cards"].as_u64().unwrap_or(0);
+
+            println!(
+                "  Got {} cards (total: {}) [{:.2}s elapsed]",
+                card_count,
+                total,
+                start.elapsed().as_secs_f64()
+            );
+
+            let has_more = json["has_more"].as_bool().unwrap_or(false);
+            let next_page = json["next_page"].as_str().map(|s| s.to_string());
+
+            all_pages.push(json);
+
+            next_url = if has_more { next_page } else { None };
+            page += 1;
+        }
+
+        Ok(all_pages)
     }
 
     /// Fetch all cards for a single query (paginated - must be sequential)
