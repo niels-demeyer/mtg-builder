@@ -11,23 +11,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::new().await?;
     let start = Instant::now();
 
-    // Query to fetch all cards
-    let query = "*";
+    // Fetch cards by type to avoid timeout on large queries
+    let card_types = [
+        "creature",
+        "instant",
+        "sorcery",
+        "enchantment",
+        "artifact",
+        "land",
+        "planeswalker",
+        "battle",
+    ];
 
-    println!("=== Fetching all cards and storing to database ===\n");
-    println!("Query: {}", query);
+    println!("=== Fetching all cards by type and storing to database ===\n");
 
-    // Fetch and store cards immediately as each page is retrieved
-    // This ensures data is persisted even if the process is interrupted
-    let total_stored = client.fetch_and_store(query, &db).await?;
+    let mut grand_total = 0;
+
+    for card_type in &card_types {
+        let query = format!("type:{}", card_type);
+        println!("\n--- Fetching {} cards ---", card_type);
+        println!("Query: {}", query);
+
+        match client.fetch_and_store(&query, &db).await {
+            Ok(stored) => {
+                grand_total += stored;
+                println!("Stored {} {} cards", stored, card_type);
+            }
+            Err(e) => {
+                eprintln!("Error fetching {} cards: {}", card_type, e);
+                eprintln!("Continuing with next type...");
+            }
+        }
+    }
 
     println!("\n=== Results ===");
-    println!("Total cards stored in database: {}", total_stored);
+    println!("Total cards stored this run: {}", grand_total);
     println!("Total cards in database: {}", db.get_card_count().await?);
     println!("Total time: {:.2}s", start.elapsed().as_secs_f64());
 
     // Example: search for cards by name
-    println!("\n=== Searching database for {query} ===");
+    println!("\n=== Searching database for 'Lightning' ===");
     let results = db.search_by_name("Lightning").await?;
     for card in results.iter().take(5) {
         println!(
