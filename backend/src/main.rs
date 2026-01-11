@@ -1,9 +1,18 @@
-use axum::{response::Html, routing::get, Router};
+use axum::{response::Json, routing::get, Router};
+use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
 async fn main() {
+    // Configure CORS to allow requests from any origin
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     // build our application with a route
-    let app = Router::new().route("/", get(handler));
+    let app = Router::new()
+        .route("/hello", get(hello))
+        .layer(cors);
 
     // run it
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
@@ -13,10 +22,6 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn handler() -> Html<&'static str> {
-    Html("<h1>Hello, World!</h1>")
-}
-
-async fn handler() -> Html<&'static str> {
-    Html("<h1>Hello, World!</h1>")
+async fn hello() -> Json<&'static str> {
+    Json("{\"message\": \"Hello, World!\"}")
 }
