@@ -11,10 +11,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::new().await?;
     let start = Instant::now();
 
-    // Query to fetch cards
-    let query = "t:land";
+    // Query to fetch all cards
+    let query = "*";
 
-    println!("=== Fetching cards and storing to database ===\n");
+    println!("=== Fetching all cards and storing to database ===\n");
     println!("Query: {}", query);
 
     // Fetch and store cards immediately as each page is retrieved
