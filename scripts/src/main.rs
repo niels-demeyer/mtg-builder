@@ -4,8 +4,11 @@ use scripts::{Database, ScryfallClient};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load environment variables from .env file
+    dotenvy::dotenv().ok();
+
     let client = ScryfallClient::new();
-    let db = Database::new("cards.db").await?;
+    let db = Database::new().await?;
     let start = Instant::now();
 
     // Query to fetch cards

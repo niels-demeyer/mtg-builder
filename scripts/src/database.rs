@@ -1,20 +1,17 @@
-use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
-use std::path::Path;
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use std::env;
 
 pub struct Database {
-    pool: Pool<Sqlite>,
+    pool: Pool<Postgres>,
 }
 
 impl Database {
-    /// Create a new database connection, creating the file if it doesn't exist
-    pub async fn new(db_path: &str) -> Result<Self, sqlx::Error> {
-        // Create the database file if it doesn't exist
-        if !Path::new(db_path).exists() {
-            std::fs::File::create(db_path)?;
-        }
+    /// Create a new database connection using DATABASE_URL environment variable
+    pub async fn new() -> Result<Self, sqlx::Error> {
+        let database_url = env::var("DATABASE_URL")
+            .expect("DATABASE_URL must be set");
 
-        let database_url = format!("sqlite:{}", db_path);
-        let pool = SqlitePoolOptions::new()
+        let pool = PgPoolOptions::new()
             .max_connections(5)
             .connect(&database_url)
             .await?;
@@ -38,10 +35,10 @@ impl Database {
                 uri TEXT,
                 scryfall_uri TEXT,
                 layout TEXT,
-                highres_image INTEGER,
+                highres_image BOOLEAN,
                 image_status TEXT,
                 mana_cost TEXT,
-                cmc REAL,
+                cmc DOUBLE PRECISION,
                 type_line TEXT,
                 oracle_text TEXT,
                 power TEXT,
@@ -51,14 +48,14 @@ impl Database {
                 keywords TEXT,
                 legalities TEXT,
                 games TEXT,
-                reserved INTEGER,
-                foil INTEGER,
-                nonfoil INTEGER,
+                reserved BOOLEAN,
+                foil BOOLEAN,
+                nonfoil BOOLEAN,
                 finishes TEXT,
-                oversized INTEGER,
-                promo INTEGER,
-                reprint INTEGER,
-                variation INTEGER,
+                oversized BOOLEAN,
+                promo BOOLEAN,
+                reprint BOOLEAN,
+                variation BOOLEAN,
                 set_id TEXT,
                 set_code TEXT,
                 set_name TEXT,
@@ -69,7 +66,7 @@ impl Database {
                 rulings_uri TEXT,
                 prints_search_uri TEXT,
                 collector_number TEXT,
-                digital INTEGER,
+                digital BOOLEAN,
                 rarity TEXT,
                 flavor_text TEXT,
                 card_back_id TEXT,
@@ -78,10 +75,10 @@ impl Database {
                 illustration_id TEXT,
                 border_color TEXT,
                 frame TEXT,
-                full_art INTEGER,
-                textless INTEGER,
-                booster INTEGER,
-                story_spotlight INTEGER,
+                full_art BOOLEAN,
+                textless BOOLEAN,
+                booster BOOLEAN,
+                story_spotlight BOOLEAN,
                 edhrec_rank INTEGER,
                 penny_rank INTEGER,
                 prices TEXT,
@@ -91,8 +88,8 @@ impl Database {
                 card_faces TEXT,
                 all_parts TEXT,
                 raw_json TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             )
             "#,
         )
@@ -135,73 +132,73 @@ impl Database {
                 story_spotlight, edhrec_rank, penny_rank, prices, related_uris,
                 purchase_uris, image_uris, card_faces, all_parts, raw_json, updated_at
             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28,
-                ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41,
-                ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52, ?53, ?54,
-                ?55, ?56, ?57, ?58, ?59, ?60, ?61, CURRENT_TIMESTAMP
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
+                $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41,
+                $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54,
+                $55, $56, $57, $58, $59, $60, $61, CURRENT_TIMESTAMP
             )
             ON CONFLICT(id) DO UPDATE SET
-                oracle_id = excluded.oracle_id,
-                name = excluded.name,
-                lang = excluded.lang,
-                released_at = excluded.released_at,
-                uri = excluded.uri,
-                scryfall_uri = excluded.scryfall_uri,
-                layout = excluded.layout,
-                highres_image = excluded.highres_image,
-                image_status = excluded.image_status,
-                mana_cost = excluded.mana_cost,
-                cmc = excluded.cmc,
-                type_line = excluded.type_line,
-                oracle_text = excluded.oracle_text,
-                power = excluded.power,
-                toughness = excluded.toughness,
-                colors = excluded.colors,
-                color_identity = excluded.color_identity,
-                keywords = excluded.keywords,
-                legalities = excluded.legalities,
-                games = excluded.games,
-                reserved = excluded.reserved,
-                foil = excluded.foil,
-                nonfoil = excluded.nonfoil,
-                finishes = excluded.finishes,
-                oversized = excluded.oversized,
-                promo = excluded.promo,
-                reprint = excluded.reprint,
-                variation = excluded.variation,
-                set_id = excluded.set_id,
-                set_code = excluded.set_code,
-                set_name = excluded.set_name,
-                set_type = excluded.set_type,
-                set_uri = excluded.set_uri,
-                set_search_uri = excluded.set_search_uri,
-                scryfall_set_uri = excluded.scryfall_set_uri,
-                rulings_uri = excluded.rulings_uri,
-                prints_search_uri = excluded.prints_search_uri,
-                collector_number = excluded.collector_number,
-                digital = excluded.digital,
-                rarity = excluded.rarity,
-                flavor_text = excluded.flavor_text,
-                card_back_id = excluded.card_back_id,
-                artist = excluded.artist,
-                artist_ids = excluded.artist_ids,
-                illustration_id = excluded.illustration_id,
-                border_color = excluded.border_color,
-                frame = excluded.frame,
-                full_art = excluded.full_art,
-                textless = excluded.textless,
-                booster = excluded.booster,
-                story_spotlight = excluded.story_spotlight,
-                edhrec_rank = excluded.edhrec_rank,
-                penny_rank = excluded.penny_rank,
-                prices = excluded.prices,
-                related_uris = excluded.related_uris,
-                purchase_uris = excluded.purchase_uris,
-                image_uris = excluded.image_uris,
-                card_faces = excluded.card_faces,
-                all_parts = excluded.all_parts,
-                raw_json = excluded.raw_json,
+                oracle_id = EXCLUDED.oracle_id,
+                name = EXCLUDED.name,
+                lang = EXCLUDED.lang,
+                released_at = EXCLUDED.released_at,
+                uri = EXCLUDED.uri,
+                scryfall_uri = EXCLUDED.scryfall_uri,
+                layout = EXCLUDED.layout,
+                highres_image = EXCLUDED.highres_image,
+                image_status = EXCLUDED.image_status,
+                mana_cost = EXCLUDED.mana_cost,
+                cmc = EXCLUDED.cmc,
+                type_line = EXCLUDED.type_line,
+                oracle_text = EXCLUDED.oracle_text,
+                power = EXCLUDED.power,
+                toughness = EXCLUDED.toughness,
+                colors = EXCLUDED.colors,
+                color_identity = EXCLUDED.color_identity,
+                keywords = EXCLUDED.keywords,
+                legalities = EXCLUDED.legalities,
+                games = EXCLUDED.games,
+                reserved = EXCLUDED.reserved,
+                foil = EXCLUDED.foil,
+                nonfoil = EXCLUDED.nonfoil,
+                finishes = EXCLUDED.finishes,
+                oversized = EXCLUDED.oversized,
+                promo = EXCLUDED.promo,
+                reprint = EXCLUDED.reprint,
+                variation = EXCLUDED.variation,
+                set_id = EXCLUDED.set_id,
+                set_code = EXCLUDED.set_code,
+                set_name = EXCLUDED.set_name,
+                set_type = EXCLUDED.set_type,
+                set_uri = EXCLUDED.set_uri,
+                set_search_uri = EXCLUDED.set_search_uri,
+                scryfall_set_uri = EXCLUDED.scryfall_set_uri,
+                rulings_uri = EXCLUDED.rulings_uri,
+                prints_search_uri = EXCLUDED.prints_search_uri,
+                collector_number = EXCLUDED.collector_number,
+                digital = EXCLUDED.digital,
+                rarity = EXCLUDED.rarity,
+                flavor_text = EXCLUDED.flavor_text,
+                card_back_id = EXCLUDED.card_back_id,
+                artist = EXCLUDED.artist,
+                artist_ids = EXCLUDED.artist_ids,
+                illustration_id = EXCLUDED.illustration_id,
+                border_color = EXCLUDED.border_color,
+                frame = EXCLUDED.frame,
+                full_art = EXCLUDED.full_art,
+                textless = EXCLUDED.textless,
+                booster = EXCLUDED.booster,
+                story_spotlight = EXCLUDED.story_spotlight,
+                edhrec_rank = EXCLUDED.edhrec_rank,
+                penny_rank = EXCLUDED.penny_rank,
+                prices = EXCLUDED.prices,
+                related_uris = EXCLUDED.related_uris,
+                purchase_uris = EXCLUDED.purchase_uris,
+                image_uris = EXCLUDED.image_uris,
+                card_faces = EXCLUDED.card_faces,
+                all_parts = EXCLUDED.all_parts,
+                raw_json = EXCLUDED.raw_json,
                 updated_at = CURRENT_TIMESTAMP
             "#,
         )
@@ -213,7 +210,7 @@ impl Database {
         .bind(card_json["uri"].as_str())
         .bind(card_json["scryfall_uri"].as_str())
         .bind(card_json["layout"].as_str())
-        .bind(card_json["highres_image"].as_bool().map(|b| b as i32))
+        .bind(card_json["highres_image"].as_bool())
         .bind(card_json["image_status"].as_str())
         .bind(card_json["mana_cost"].as_str())
         .bind(card_json["cmc"].as_f64())
@@ -226,14 +223,14 @@ impl Database {
         .bind(json_array_to_string(&card_json["keywords"]))
         .bind(card_json["legalities"].to_string())
         .bind(json_array_to_string(&card_json["games"]))
-        .bind(card_json["reserved"].as_bool().map(|b| b as i32))
-        .bind(card_json["foil"].as_bool().map(|b| b as i32))
-        .bind(card_json["nonfoil"].as_bool().map(|b| b as i32))
+        .bind(card_json["reserved"].as_bool())
+        .bind(card_json["foil"].as_bool())
+        .bind(card_json["nonfoil"].as_bool())
         .bind(json_array_to_string(&card_json["finishes"]))
-        .bind(card_json["oversized"].as_bool().map(|b| b as i32))
-        .bind(card_json["promo"].as_bool().map(|b| b as i32))
-        .bind(card_json["reprint"].as_bool().map(|b| b as i32))
-        .bind(card_json["variation"].as_bool().map(|b| b as i32))
+        .bind(card_json["oversized"].as_bool())
+        .bind(card_json["promo"].as_bool())
+        .bind(card_json["reprint"].as_bool())
+        .bind(card_json["variation"].as_bool())
         .bind(card_json["set_id"].as_str())
         .bind(card_json["set"].as_str())
         .bind(card_json["set_name"].as_str())
@@ -244,7 +241,7 @@ impl Database {
         .bind(card_json["rulings_uri"].as_str())
         .bind(card_json["prints_search_uri"].as_str())
         .bind(card_json["collector_number"].as_str())
-        .bind(card_json["digital"].as_bool().map(|b| b as i32))
+        .bind(card_json["digital"].as_bool())
         .bind(card_json["rarity"].as_str())
         .bind(card_json["flavor_text"].as_str())
         .bind(card_json["card_back_id"].as_str())
@@ -253,10 +250,10 @@ impl Database {
         .bind(card_json["illustration_id"].as_str())
         .bind(card_json["border_color"].as_str())
         .bind(card_json["frame"].as_str())
-        .bind(card_json["full_art"].as_bool().map(|b| b as i32))
-        .bind(card_json["textless"].as_bool().map(|b| b as i32))
-        .bind(card_json["booster"].as_bool().map(|b| b as i32))
-        .bind(card_json["story_spotlight"].as_bool().map(|b| b as i32))
+        .bind(card_json["full_art"].as_bool())
+        .bind(card_json["textless"].as_bool())
+        .bind(card_json["booster"].as_bool())
+        .bind(card_json["story_spotlight"].as_bool())
         .bind(card_json["edhrec_rank"].as_i64().map(|n| n as i32))
         .bind(card_json["penny_rank"].as_i64().map(|n| n as i32))
         .bind(card_json["prices"].to_string())
@@ -301,7 +298,7 @@ impl Database {
     /// Get a card by ID
     pub async fn get_card_by_id(&self, id: &str) -> Result<Option<serde_json::Value>, sqlx::Error> {
         let row: Option<(String,)> =
-            sqlx::query_as("SELECT raw_json FROM cards WHERE id = ?")
+            sqlx::query_as("SELECT raw_json FROM cards WHERE id = $1")
                 .bind(id)
                 .fetch_optional(&self.pool)
                 .await?;
@@ -312,7 +309,7 @@ impl Database {
     /// Search cards by name
     pub async fn search_by_name(&self, name: &str) -> Result<Vec<serde_json::Value>, sqlx::Error> {
         let rows: Vec<(String,)> =
-            sqlx::query_as("SELECT raw_json FROM cards WHERE name LIKE ?")
+            sqlx::query_as("SELECT raw_json FROM cards WHERE name ILIKE $1")
                 .bind(format!("%{}%", name))
                 .fetch_all(&self.pool)
                 .await?;
