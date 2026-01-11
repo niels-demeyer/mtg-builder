@@ -5,6 +5,10 @@ edition = "2021"
 publish = false
 
 [dependencies]
-axum = "0.8.8"
+axum = { version = "0.8.8" }
 tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "any", "postgres"] }
 tower-http = { version = "0.6", features = ["cors"] }
