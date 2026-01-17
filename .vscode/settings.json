@@ -1,5 +1,7 @@
 {
   "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
   "python.analysis.extraPaths": ["${workspaceFolder}/backend/src"],
-  "rust-analyzer.linkedProjects": ["backend/Cargo.toml", "scripts/Cargo.toml"]
+  "rust-analyzer.linkedProjects": ["backend/Cargo.toml", "scripts/Cargo.toml"],
+  "python-envs.defaultEnvManager": "ms-python.python:system",
+  "python-envs.pythonProjects": []
 }
