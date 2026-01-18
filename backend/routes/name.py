@@ -22,11 +22,13 @@ async def name_check(
         names_to_check = [n.lower() for n in names_to_check]
         async with request.app.state.async_session() as session:
             result = await session.execute(
-                text("SELECT name FROM cards WHERE LOWER(name) = ANY(:names)"), {"names": names_to_check}
+                text("SELECT name, mana_cost, type_line, oracle_text, power, toughness FROM cards WHERE LOWER(name) = ANY(:names)"), {"names": names_to_check}
             )
-            value = result.scalar()
-            if value:
-                return {"status": "found", "name": value}
+            row = result.first()
+            if row:
+                # Convert SQLAlchemy Row to dict
+                card = dict(row._mapping)
+                return {"status": "found", **card}
             else:
                 raise HTTPException(status_code=404, detail={"status": "not found", "name": name})
     except HTTPException:
