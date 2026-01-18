@@ -13,14 +13,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Fetch cards by type to avoid timeout on large queries
     let card_types = [
-        "creature",
-        "instant",
-        "sorcery",
-        "enchantment",
         "artifact",
-        "land",
-        "planeswalker",
         "battle",
+        "conspiracy",
+        "creature",
+        "dungeon",
+        "emblem",
+        "enchantment",
+        "hero",
+        "instant",
+        "kindred",
+        "land",
+        "phenomenon",
+        "plane",
+        "planeswalker",
+        "scheme",
+        "sorcery",
+        "vanguard",
     ];
 
     println!("=== Fetching all cards by type and storing to database ===\n");
