@@ -1,11 +1,13 @@
 import os
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
 
 import asyncpg
-from sqlalchemy import text
 from dotenv import load_dotenv
 from fastapi import FastAPI
+
+# Import and include routers
+from routes.health import router as health_router
 
 load_dotenv()
 
@@ -57,16 +59,8 @@ app = FastAPI(
 
 
 
-@app.get("/health", tags=["Health"])
-async def health_check() -> dict[str, Any]:
-    """Health check endpoint that verifies database connectivity using SQLAlchemy."""
-    try:
-        async with app.state.async_session() as session:
-            result = await session.execute(text("SELECT 1"))
-            value = result.scalar()
-            return {"status": "healthy", "database": "connected", "check": value}
-    except Exception as e:
-        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
+
+app.include_router(health_router)
 
 
 if __name__ == "__main__":
