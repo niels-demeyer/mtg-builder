@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 # Import and include routers
 from routes.health import router as health_router
+from routes.name import router as name_router
 
 load_dotenv()
 
@@ -60,7 +61,14 @@ app = FastAPI(
 
 
 
-app.include_router(health_router)
+app.include_router(health_router,
+                   prefix="/api/v1",
+                   tags=["Health"])
+
+
+app.include_router(name_router,
+                   prefix="/api/v1",
+                   tags=["Name"])
 
 
 if __name__ == "__main__":
