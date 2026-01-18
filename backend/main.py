@@ -2,8 +2,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.ext.asyncio import async_sessionmaker
+import asyncpg
 from sqlalchemy import text
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -19,14 +18,12 @@ DATABASE_URL = _db_url
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    # Startup: create SQLAlchemy async engine and sessionmaker
-    engine = create_async_engine(DATABASE_URL, echo=True, future=True)
-    app.state.engine = engine
-    app.state.async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    # Startup: create database connection pool
+    pool = await asyncpg.create_pool(DATABASE_URL)  # type: ignore[attr-defined]
+    app.state.pool = pool
     yield
-    # Shutdown: dispose the engine
-    await engine.dispose()
-
+    # Shutdown: close the connection pool
+    await pool.close()  # type: ignore[attr-defined]
 
 app = FastAPI(
     title="MTG Builder API",
