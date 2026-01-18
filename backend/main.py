@@ -9,21 +9,44 @@ from fastapi import FastAPI
 
 load_dotenv()
 
-_db_url = os.getenv("DATABASE_URL", "")
-if _db_url.startswith("postgres://"):
-    _db_url = _db_url.replace("postgres://", "postgresql+asyncpg://", 1)
-DATABASE_URL = _db_url
+
+# Get raw DSN from env
+_raw_db_url = os.getenv("DATABASE_URL", "")
+
+# For asyncpg, must be 'postgresql://' or 'postgres://'
+if _raw_db_url.startswith("postgresql+asyncpg://"):
+    asyncpg_dsn = _raw_db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+elif _raw_db_url.startswith("postgres://"):
+    asyncpg_dsn = _raw_db_url.replace("postgres://", "postgresql://", 1)
+else:
+    asyncpg_dsn = _raw_db_url
+
+# For SQLAlchemy, must be 'postgresql+asyncpg://'
+if _raw_db_url.startswith("postgres://"):
+    sqlalchemy_dsn = _raw_db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif _raw_db_url.startswith("postgresql://"):
+    sqlalchemy_dsn = _raw_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+else:
+    sqlalchemy_dsn = _raw_db_url
 
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup: create database connection pool
-    pool = await asyncpg.create_pool(DATABASE_URL)  # type: ignore[attr-defined]
+    pool = await asyncpg.create_pool(asyncpg_dsn)  # type: ignore[attr-defined]
     app.state.pool = pool
+
+    # Setup SQLAlchemy async sessionmaker
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    engine = create_async_engine(sqlalchemy_dsn, echo=False)
+    app.state.async_session = async_sessionmaker(engine, expire_on_commit=False)
+
     yield
-    # Shutdown: close the connection pool
+
+    # Shutdown: close the connection pool and SQLAlchemy engine
     await pool.close()  # type: ignore[attr-defined]
+    await engine.dispose()
 
 app = FastAPI(
     title="MTG Builder API",
