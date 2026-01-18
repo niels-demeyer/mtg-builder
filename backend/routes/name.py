@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Query, Request
 from typing import Any
 from sqlalchemy import text
+from fastapi import HTTPException
 
 router = APIRouter()
 
@@ -20,6 +21,9 @@ async def name_check(
             if value:
                 return {"status": "found", "name": value}
             else:
-                return {"status": "not found", "name": name}
+                raise HTTPException(status_code=404, detail={"status": "not found", "name": name})
+    except HTTPException:
+        # Let FastAPI handle HTTPException (404)
+        raise
     except Exception as e:
         return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
