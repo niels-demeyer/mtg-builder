@@ -1,10 +1,39 @@
 
 from fastapi import APIRouter, Query, Request
-from typing import Any
+from typing import Any, Optional, List, Dict
+from dataclasses import dataclass, asdict
 from sqlalchemy import text
 from fastapi import HTTPException
 
 router = APIRouter()
+
+@dataclass
+class ImageUris:
+    small: str
+    normal: str
+    large: str
+    png: str
+    art_crop: str
+    border_crop: str
+
+@dataclass
+class DbCard:
+    id: str
+    name: str
+    mana_cost: Optional[str] = None
+    cmc: int = 0
+    power: Optional[str] = None
+    toughness: Optional[str] = None
+    type_line: str = ""
+    oracle_text: Optional[str] = None
+    colors: Optional[List[str]] = None
+    color_identity: Optional[List[str]] = None
+    rarity: str = ""
+    keyword: Optional[List[str]] = None
+    set_id: str = ""
+    set_name: str = ""
+    image_uris: Optional[ImageUris] = None
+    legalities: Optional[Dict[str, str]] = None
 
 @router.get("/name")
 async def name_check(
@@ -22,13 +51,16 @@ async def name_check(
         names_to_check = [n.lower() for n in names_to_check]
         async with request.app.state.async_session() as session:
             result = await session.execute(
-                text("SELECT name, mana_cost, type_line, oracle_text, power, toughness FROM cards WHERE LOWER(name) = ANY(:names)"), {"names": names_to_check}
+                text("""
+                    SELECT id, name, mana_cost, cmc, power, toughness, type_line, oracle_text, colors, color_identity, rarity, keywords, set_id, set_name, image_uris, legalities
+                    FROM cards
+                    WHERE LOWER(name) = ANY(:names)
+                """), {"names": names_to_check}
             )
             row = result.first()
             if row:
-                # Convert SQLAlchemy Row to dict
-                card = dict(row._mapping)
-                return {"status": "found", **card}
+                card = DbCard(**row._mapping)
+                return {"status": "found", **asdict(card)}
             else:
                 raise HTTPException(status_code=404, detail={"status": "not found", "name": name})
     except HTTPException:
