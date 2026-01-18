@@ -13,9 +13,16 @@ async def name_check(
 ) -> dict[str, Any]:
     """Looks for a name in the cards database."""
     try:
+        # Handle special case for double-faced cards (e.g., 'Riverglide Pathway // Lavaglide Pathway')
+        names_to_check = [name]
+        if ' // ' in name:
+            part1, part2 = name.split(' // ', 1)
+            names_to_check.extend([part1.strip(), part2.strip()])
+        # Convert all names to lowercase for case-insensitive search
+        names_to_check = [n.lower() for n in names_to_check]
         async with request.app.state.async_session() as session:
             result = await session.execute(
-                text("SELECT name FROM cards WHERE name = :name"), {"name": name}
+                text("SELECT name FROM cards WHERE LOWER(name) = ANY(:names)"), {"names": names_to_check}
             )
             value = result.scalar()
             if value:
