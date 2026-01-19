@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Query, Request
 from typing import Any
 from dataclasses import asdict
@@ -34,6 +35,13 @@ async def search_cards(
             cards = []
             for row in rows:
                 data = dict(row._mapping)
+                # Parse JSON string fields
+                for field in ('image_uris', 'legalities', 'colors', 'color_identity', 'keywords'):
+                    if field in data and isinstance(data[field], str) and data[field]:
+                        try:
+                            data[field] = json.loads(data[field])
+                        except json.JSONDecodeError:
+                            pass
                 card = DbCard(**data)
                 cards.append(asdict(card))
             return {"data": cards, "total_cards": len(cards)}

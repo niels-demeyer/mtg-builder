@@ -23,7 +23,7 @@ class DbCard:
     colors: Optional[List[str]] = None
     color_identity: Optional[List[str]] = None
     rarity: str = ""
-    keyword: Optional[List[str]] = None
+    keywords: Optional[List[str]] = None
     set_id: str = ""
     set_name: str = ""
     image_uris: Optional[ImageUris] = None
