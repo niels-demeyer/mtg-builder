@@ -5,10 +5,12 @@ from typing import AsyncGenerator
 import asyncpg
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # Import and include routers
 from routes.health import router as health_router
 from routes.name import router as name_router
+from routes.search import router as search_router
 
 load_dotenv()
 
@@ -58,8 +60,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(health_router,
                    prefix="/api/v1",
@@ -69,6 +76,10 @@ app.include_router(health_router,
 app.include_router(name_router,
                    prefix="/api/v1",
                    tags=["Name"])
+
+app.include_router(search_router,
+                   prefix="/api/v1",
+                   tags=["Search"])
 
 
 if __name__ == "__main__":

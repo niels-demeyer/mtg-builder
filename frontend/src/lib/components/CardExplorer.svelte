@@ -1,11 +1,11 @@
 <script lang="ts">
-    import type { ScryfallCard } from '$lib/types';
+    import type { DbCard } from '$lib/types';
 
     let searchQuery = $state('');
-    let cards = $state<ScryfallCard[]>([]);
+    let cards = $state<DbCard[]>([]);
     let isLoading = $state(false);
     let hasSearched = $state(false);
-    let selectedCard = $state<ScryfallCard | null>(null);
+    let selectedCard = $state<DbCard | null>(null);
 
 
     async function searchCards(): Promise<void> {
@@ -15,7 +15,21 @@
         hasSearched = true;
         try {
             const response = await fetch(
-                `https://api.scryfall.com/cards/search?q=${encodeURIComponent(searchQuery)}`); if (response.ok) { const data = await response.json(); cards = data.data || []; } else { cards = []; } } catch { cards = []; } finally { isLoading = false; } } </script> <style> .explorer { padding: 3rem; max-width: 1400px; margin: 0 auto; } .explorer-header { text-align: center; margin-bottom: 2.5rem;
+                `http://localhost:8000/api/v1/search?q=${encodeURIComponent(searchQuery)}`
+            );
+            if (response.ok) {
+                const data = await response.json();
+                cards = data.data || [];
+            } else {
+                cards = [];
+            }
+        } catch {
+            cards = [];
+        } finally {
+            isLoading = false;
+        }
+    }
+</script> <style> .explorer { padding: 3rem; max-width: 1400px; margin: 0 auto; } .explorer-header { text-align: center; margin-bottom: 2.5rem;
   }
 
   .explorer-header h1 {
