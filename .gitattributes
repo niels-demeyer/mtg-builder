@@ -1,1 +1,3 @@
+# Ensure frontend/src/lib is included and treated as text
+frontend/src/lib/* text
 
