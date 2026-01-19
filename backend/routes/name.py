@@ -1,39 +1,12 @@
 
 from fastapi import APIRouter, Query, Request
-from typing import Any, Optional, List, Dict
-from dataclasses import dataclass, asdict
+from typing import Any
+from dataclasses import asdict
 from sqlalchemy import text
 from fastapi import HTTPException
+from backend.models.dbmodels import DbCard
 
 router = APIRouter()
-
-@dataclass
-class ImageUris:
-    small: str
-    normal: str
-    large: str
-    png: str
-    art_crop: str
-    border_crop: str
-
-@dataclass
-class DbCard:
-    id: str
-    name: str
-    mana_cost: Optional[str] = None
-    cmc: int = 0
-    power: Optional[str] = None
-    toughness: Optional[str] = None
-    type_line: str = ""
-    oracle_text: Optional[str] = None
-    colors: Optional[List[str]] = None
-    color_identity: Optional[List[str]] = None
-    rarity: str = ""
-    keyword: Optional[List[str]] = None
-    set_id: str = ""
-    set_name: str = ""
-    image_uris: Optional[ImageUris] = None
-    legalities: Optional[Dict[str, str]] = None
 
 @router.get("/name")
 async def name_check(
@@ -59,7 +32,8 @@ async def name_check(
             )
             row = result.first()
             if row:
-                card = DbCard(**row._mapping)
+                data = dict(row._mapping)
+                card = DbCard(**data)
                 return {"status": "found", **asdict(card)}
             else:
                 raise HTTPException(status_code=404, detail={"status": "not found", "name": name})
