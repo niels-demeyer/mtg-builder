@@ -5,7 +5,7 @@
   import Home from './lib/components/Home.svelte';
   import DeckList from './lib/components/DeckList.svelte';
   import DeckBuilder from './lib/components/DeckBuilder.svelte';
-  import Explorer from './lib/components/Explorer.svelte';
+  import CardExplorer from './lib/components/CardExplorer.svelte';
   import Training from './lib/components/Training.svelte';
   import NewDeckModal from './lib/components/NewDeckModal.svelte';
   import type { Deck } from './lib/types';
@@ -123,7 +123,7 @@
     {:else if currentView === 'builder'}
       <DeckBuilder onBack={handleBackToDecks} />
     {:else if currentView === 'explorer'}
-      <Explorer />
+      <CardExplorer />
     {:else if currentView === 'training'}
       <Training />
     {:else if currentView === 'settings'}
