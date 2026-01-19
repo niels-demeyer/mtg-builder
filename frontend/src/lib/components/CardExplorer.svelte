@@ -1,11 +1,29 @@
 <script lang="ts">
     import type { DbCard } from '$lib/types';
 
+    interface Printing {
+        id: string;
+        name: string;
+        set_name: string;
+        set_code: string;
+        collector_number: string;
+        rarity: string;
+        image_uris?: {
+            small: string;
+            normal: string;
+            large: string;
+        };
+        released_at: string;
+    }
+
     let searchQuery = $state('');
     let cards = $state<DbCard[]>([]);
     let isLoading = $state(false);
     let hasSearched = $state(false);
     let selectedCard = $state<DbCard | null>(null);
+    let printings = $state<Printing[]>([]);
+    let loadingPrintings = $state(false);
+    let selectedPrintingIndex = $state(0);
 
     async function searchCards(): Promise<void> {
         if (searchQuery.length < 2) return;
@@ -35,17 +53,49 @@
         }
     }
 
-    function selectCard(card: DbCard): void {
+    async function selectCard(card: DbCard): Promise<void> {
         selectedCard = card;
+        printings = [];
+        selectedPrintingIndex = 0;
+        loadingPrintings = true;
+
+        try {
+            const response = await fetch(
+                `http://localhost:8000/api/v1/cards/${card.id}/printings`
+            );
+            if (response.ok) {
+                const data = await response.json();
+                printings = data.data || [];
+            }
+        } catch {
+            printings = [];
+        } finally {
+            loadingPrintings = false;
+        }
     }
 
     function closeModal(): void {
         selectedCard = null;
+        printings = [];
+        selectedPrintingIndex = 0;
     }
 
-    function getCardImage(card: DbCard): string {
-        return card.image_uri || card.image_uris?.normal || card.image_uris?.small || '';
+    function getCardImage(card: DbCard | Printing): string {
+        if ('image_uri' in card) {
+            return card.image_uri || card.image_uris?.normal || card.image_uris?.small || '';
+        }
+        return card.image_uris?.normal || card.image_uris?.small || '';
     }
+
+    function selectPrinting(index: number): void {
+        selectedPrintingIndex = index;
+    }
+
+    $effect(() => {
+        if (printings.length > 0 && selectedPrintingIndex >= printings.length) {
+            selectedPrintingIndex = 0;
+        }
+    });
 </script>
 
 <div class="explorer">
@@ -93,9 +143,13 @@
     <div class="card-modal" onclick={closeModal} role="dialog" aria-modal="true">
         <div class="modal-content" onclick={(e) => e.stopPropagation()}>
             <button class="close-btn" onclick={closeModal}>✕</button>
-            {#if getCardImage(selectedCard)}
+
+            {#if printings.length > 0}
+                <img src={getCardImage(printings[selectedPrintingIndex])} alt={printings[selectedPrintingIndex].name} />
+            {:else if getCardImage(selectedCard)}
                 <img src={getCardImage(selectedCard)} alt={selectedCard.name} />
             {/if}
+
             <div class="card-details">
                 <h2>{selectedCard.name}</h2>
                 {#if selectedCard.type_line}
@@ -104,11 +158,28 @@
                 {#if selectedCard.oracle_text}
                     <p class="oracle">{selectedCard.oracle_text}</p>
                 {/if}
-                {#if selectedCard.set_name}
+
+                {#if loadingPrintings}
+                    <p class="set">Loading printings...</p>
+                {:else if printings.length > 0}
+                    <p class="set">{printings[selectedPrintingIndex].set_name} ({printings[selectedPrintingIndex].released_at})</p>
+                    <div class="printings-section">
+                        <p class="printings-label">{printings.length} printings available</p>
+                        <div class="printings-grid">
+                            {#each printings as printing, index}
+                                <button
+                                    class="printing-thumb"
+                                    class:selected={index === selectedPrintingIndex}
+                                    onclick={() => selectPrinting(index)}
+                                    title="{printing.set_name} ({printing.released_at})"
+                                >
+                                    <img src={printing.image_uris?.small || ''} alt={printing.set_name} />
+                                </button>
+                            {/each}
+                        </div>
+                    </div>
+                {:else if selectedCard.set_name}
                     <p class="set">{selectedCard.set_name}</p>
-                {/if}
-                {#if selectedCard.prices?.usd}
-                    <p class="price">${selectedCard.prices.usd}</p>
                 {/if}
             </div>
         </div>
@@ -329,5 +400,55 @@
         font-weight: 700;
         font-size: 1.25rem;
         margin: 0.5rem 0;
+    }
+
+    .printings-section {
+        margin-top: 1rem;
+        width: 100%;
+    }
+
+    .printings-label {
+        color: hsl(var(--muted-foreground));
+        font-size: 0.85rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .printings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+        gap: 0.5rem;
+        max-height: 200px;
+        overflow-y: auto;
+        padding: 0.5rem;
+        background: hsl(var(--secondary));
+        border-radius: var(--radius-md);
+    }
+
+    .printing-thumb {
+        background: none;
+        border: 2px solid transparent;
+        border-radius: var(--radius-sm);
+        padding: 0;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .printing-thumb:hover {
+        border-color: hsl(var(--muted-foreground));
+    }
+
+    .printing-thumb.selected {
+        border-color: hsl(var(--primary));
+    }
+
+    .printing-thumb img {
+        width: 100%;
+        border-radius: var(--radius-sm);
+        display: block;
+    }
+
+    .modal-content {
+        max-height: 90vh;
+        overflow-y: auto;
     }
 </style>
