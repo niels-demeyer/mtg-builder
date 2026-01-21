@@ -1,75 +1,116 @@
 from fastapi import APIRouter, HTTPException, status, Request, Depends, Path
 from pydantic import BaseModel, Field
 from sqlalchemy import text
-from typing import Optional, List
+from typing import Optional, List, Any
+import json
 
 from app.models.user import verify_jwt_token, TokenData
 
 router = APIRouter()
 
 
+class CardInDeck(BaseModel):
+    id: str
+    name: str
+    mana_cost: Optional[str] = None
+    cmc: float = 0
+    type_line: str = ""
+    colors: Optional[List[str]] = None
+    rarity: str = "common"
+    image_uri: Optional[str] = None
+    quantity: int = 1
+    zone: str = "mainboard"
+    tags: List[str] = []
+    isCommander: Optional[bool] = False
+
+
 class DeckCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    format: str = "Standard"
     description: Optional[str] = None
+    cards: List[CardInDeck] = []
 
 
 class DeckUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
+    format: Optional[str] = None
     description: Optional[str] = None
-
-
-class DeckCardAdd(BaseModel):
-    card_id: str
-    quantity: int = Field(1, ge=1)
-
-
-class DeckCardUpdate(BaseModel):
-    quantity: int = Field(..., ge=1)
-
-
-class DeckCardResponse(BaseModel):
-    id: str
-    card_id: str
-    quantity: int
-    card_name: Optional[str] = None
+    cards: Optional[List[CardInDeck]] = None
 
 
 class DeckResponse(BaseModel):
     id: str
     name: str
+    format: str = "Standard"
     description: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-
-
-class DeckWithCardsResponse(DeckResponse):
-    cards: List[DeckCardResponse] = []
+    cards: List[CardInDeck] = []
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
 
 
 @router.get("/decks", response_model=List[DeckResponse])
 async def list_decks(request: Request, token_data: TokenData = Depends(verify_jwt_token)):
-    """List all decks for the current user."""
+    """List all decks for the current user with their cards."""
     async with request.app.state.async_session() as session:
+        # Get all decks
         result = await session.execute(
             text("""
-                SELECT id, name, description, created_at, updated_at
+                SELECT id, name, format, description, created_at, updated_at
                 FROM decks
-                WHERE user_id = :user_id::uuid
+                WHERE user_id = CAST(:user_id AS uuid)
                 ORDER BY updated_at DESC
             """),
             {"user_id": token_data.user_id},
         )
-        rows = result.fetchall()
-        return [
-            DeckResponse(
-                id=str(row[0]),
-                name=row[1],
-                description=row[2],
-                created_at=row[3].isoformat() if row[3] else None,
-                updated_at=row[4].isoformat() if row[4] else None,
+        deck_rows = result.fetchall()
+
+        decks = []
+        for deck_row in deck_rows:
+            deck_id = str(deck_row[0])
+
+            # Get cards for this deck
+            cards_result = await session.execute(
+                text("""
+                    SELECT card_id, quantity, zone, tags, is_commander, card_data
+                    FROM deck_cards
+                    WHERE deck_id = CAST(:deck_id AS uuid)
+                """),
+                {"deck_id": deck_id},
             )
-            for row in rows
-        ]
+            card_rows = cards_result.fetchall()
+
+            cards = []
+            for card_row in card_rows:
+                card_data = card_row[5] if card_row[5] else {}
+                if isinstance(card_data, str):
+                    card_data = json.loads(card_data)
+
+                cards.append(CardInDeck(
+                    id=card_row[0],
+                    name=card_data.get("name", "Unknown"),
+                    mana_cost=card_data.get("mana_cost"),
+                    cmc=card_data.get("cmc", 0),
+                    type_line=card_data.get("type_line", ""),
+                    colors=card_data.get("colors"),
+                    rarity=card_data.get("rarity", "common"),
+                    image_uri=card_data.get("image_uri"),
+                    quantity=card_row[1],
+                    zone=card_row[2] or "mainboard",
+                    tags=card_row[3] or [],
+                    isCommander=card_row[4] or False,
+                ))
+
+            decks.append(DeckResponse(
+                id=deck_id,
+                name=deck_row[1],
+                format=deck_row[2] or "Standard",
+                description=deck_row[3],
+                cards=cards,
+                createdAt=deck_row[4].isoformat() if deck_row[4] else None,
+                updatedAt=deck_row[5].isoformat() if deck_row[5] else None,
+            ))
+
+        return decks
 
 
 @router.post("/decks", response_model=DeckResponse, status_code=status.HTTP_201_CREATED)
@@ -78,32 +119,75 @@ async def create_deck(
     deck_data: DeckCreate,
     token_data: TokenData = Depends(verify_jwt_token),
 ):
-    """Create a new deck."""
+    """Create a new deck with optional cards."""
     async with request.app.state.async_session() as session:
+        # Create the deck
         result = await session.execute(
             text("""
-                INSERT INTO decks (user_id, name, description)
-                VALUES (:user_id::uuid, :name, :description)
-                RETURNING id, name, description, created_at, updated_at
+                INSERT INTO decks (user_id, name, format, description)
+                VALUES (CAST(:user_id AS uuid), :name, :format, :description)
+                RETURNING id, name, format, description, created_at, updated_at
             """),
             {
                 "user_id": token_data.user_id,
                 "name": deck_data.name,
+                "format": deck_data.format,
                 "description": deck_data.description,
             },
         )
         await session.commit()
         row = result.fetchone()
+        deck_id = str(row[0])
+
+        # Add cards if provided
+        cards = []
+        for card in deck_data.cards:
+            card_data_json = json.dumps({
+                "name": card.name,
+                "mana_cost": card.mana_cost,
+                "cmc": card.cmc,
+                "type_line": card.type_line,
+                "colors": card.colors,
+                "rarity": card.rarity,
+                "image_uri": card.image_uri,
+            })
+
+            await session.execute(
+                text("""
+                    INSERT INTO deck_cards (deck_id, card_id, quantity, zone, tags, is_commander, card_data)
+                    VALUES (CAST(:deck_id AS uuid), :card_id, :quantity, :zone, :tags, :is_commander, :card_data::jsonb)
+                    ON CONFLICT (deck_id, card_id, zone) DO UPDATE SET
+                        quantity = :quantity,
+                        tags = :tags,
+                        is_commander = :is_commander,
+                        card_data = :card_data::jsonb
+                """),
+                {
+                    "deck_id": deck_id,
+                    "card_id": card.id,
+                    "quantity": card.quantity,
+                    "zone": card.zone,
+                    "tags": card.tags,
+                    "is_commander": card.isCommander,
+                    "card_data": card_data_json,
+                },
+            )
+            cards.append(card)
+
+        await session.commit()
+
         return DeckResponse(
-            id=str(row[0]),
+            id=deck_id,
             name=row[1],
-            description=row[2],
-            created_at=row[3].isoformat() if row[3] else None,
-            updated_at=row[4].isoformat() if row[4] else None,
+            format=row[2] or "Standard",
+            description=row[3],
+            cards=cards,
+            createdAt=row[4].isoformat() if row[4] else None,
+            updatedAt=row[5].isoformat() if row[5] else None,
         )
 
 
-@router.get("/decks/{deck_id}", response_model=DeckWithCardsResponse)
+@router.get("/decks/{deck_id}", response_model=DeckResponse)
 async def get_deck(
     request: Request,
     deck_id: str = Path(...),
@@ -114,9 +198,9 @@ async def get_deck(
         # Get deck info
         result = await session.execute(
             text("""
-                SELECT id, name, description, created_at, updated_at
+                SELECT id, name, format, description, created_at, updated_at
                 FROM decks
-                WHERE id = :deck_id::uuid AND user_id = :user_id::uuid
+                WHERE id = CAST(:deck_id AS uuid) AND user_id = CAST(:user_id AS uuid)
             """),
             {"deck_id": deck_id, "user_id": token_data.user_id},
         )
@@ -126,34 +210,46 @@ async def get_deck(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Deck not found"
             )
 
-        # Get cards in deck with card names
+        # Get cards in deck
         result = await session.execute(
             text("""
-                SELECT dc.id, dc.card_id, dc.quantity, c.name as card_name
-                FROM deck_cards dc
-                LEFT JOIN cards c ON dc.card_id = c.id
-                WHERE dc.deck_id = :deck_id::uuid
-                ORDER BY c.name
+                SELECT card_id, quantity, zone, tags, is_commander, card_data
+                FROM deck_cards
+                WHERE deck_id = CAST(:deck_id AS uuid)
             """),
             {"deck_id": deck_id},
         )
         card_rows = result.fetchall()
 
-        return DeckWithCardsResponse(
+        cards = []
+        for card_row in card_rows:
+            card_data = card_row[5] if card_row[5] else {}
+            if isinstance(card_data, str):
+                card_data = json.loads(card_data)
+
+            cards.append(CardInDeck(
+                id=card_row[0],
+                name=card_data.get("name", "Unknown"),
+                mana_cost=card_data.get("mana_cost"),
+                cmc=card_data.get("cmc", 0),
+                type_line=card_data.get("type_line", ""),
+                colors=card_data.get("colors"),
+                rarity=card_data.get("rarity", "common"),
+                image_uri=card_data.get("image_uri"),
+                quantity=card_row[1],
+                zone=card_row[2] or "mainboard",
+                tags=card_row[3] or [],
+                isCommander=card_row[4] or False,
+            ))
+
+        return DeckResponse(
             id=str(deck_row[0]),
             name=deck_row[1],
-            description=deck_row[2],
-            created_at=deck_row[3].isoformat() if deck_row[3] else None,
-            updated_at=deck_row[4].isoformat() if deck_row[4] else None,
-            cards=[
-                DeckCardResponse(
-                    id=str(row[0]),
-                    card_id=row[1],
-                    quantity=row[2],
-                    card_name=row[3],
-                )
-                for row in card_rows
-            ],
+            format=deck_row[2] or "Standard",
+            description=deck_row[3],
+            cards=cards,
+            createdAt=deck_row[4].isoformat() if deck_row[4] else None,
+            updatedAt=deck_row[5].isoformat() if deck_row[5] else None,
         )
 
 
@@ -164,11 +260,11 @@ async def update_deck(
     deck_id: str = Path(...),
     token_data: TokenData = Depends(verify_jwt_token),
 ):
-    """Update a deck's name and/or description."""
+    """Update a deck's name, format, description, and/or cards."""
     async with request.app.state.async_session() as session:
         # Check ownership
         result = await session.execute(
-            text("SELECT id FROM decks WHERE id = :deck_id::uuid AND user_id = :user_id::uuid"),
+            text("SELECT id FROM decks WHERE id = CAST(:deck_id AS uuid) AND user_id = CAST(:user_id AS uuid)"),
             {"deck_id": deck_id, "user_id": token_data.user_id},
         )
         if not result.fetchone():
@@ -178,19 +274,16 @@ async def update_deck(
 
         # Build update query dynamically
         updates = []
-        params = {"deck_id": deck_id}
+        params: dict[str, Any] = {"deck_id": deck_id}
         if deck_data.name is not None:
             updates.append("name = :name")
             params["name"] = deck_data.name
+        if deck_data.format is not None:
+            updates.append("format = :format")
+            params["format"] = deck_data.format
         if deck_data.description is not None:
             updates.append("description = :description")
             params["description"] = deck_data.description
-
-        if not updates:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No fields to update",
-            )
 
         updates.append("updated_at = NOW()")
         update_clause = ", ".join(updates)
@@ -199,19 +292,93 @@ async def update_deck(
             text(f"""
                 UPDATE decks
                 SET {update_clause}
-                WHERE id = :deck_id::uuid
-                RETURNING id, name, description, created_at, updated_at
+                WHERE id = CAST(:deck_id AS uuid)
+                RETURNING id, name, format, description, created_at, updated_at
             """),
             params,
         )
         await session.commit()
         row = result.fetchone()
+
+        # Update cards if provided
+        cards = []
+        if deck_data.cards is not None:
+            # Delete existing cards
+            await session.execute(
+                text("DELETE FROM deck_cards WHERE deck_id = CAST(:deck_id AS uuid)"),
+                {"deck_id": deck_id},
+            )
+
+            # Insert new cards
+            for card in deck_data.cards:
+                card_data_json = json.dumps({
+                    "name": card.name,
+                    "mana_cost": card.mana_cost,
+                    "cmc": card.cmc,
+                    "type_line": card.type_line,
+                    "colors": card.colors,
+                    "rarity": card.rarity,
+                    "image_uri": card.image_uri,
+                })
+
+                await session.execute(
+                    text("""
+                        INSERT INTO deck_cards (deck_id, card_id, quantity, zone, tags, is_commander, card_data)
+                        VALUES (CAST(:deck_id AS uuid), :card_id, :quantity, :zone, :tags, :is_commander, :card_data::jsonb)
+                    """),
+                    {
+                        "deck_id": deck_id,
+                        "card_id": card.id,
+                        "quantity": card.quantity,
+                        "zone": card.zone,
+                        "tags": card.tags,
+                        "is_commander": card.isCommander,
+                        "card_data": card_data_json,
+                    },
+                )
+                cards.append(card)
+
+            await session.commit()
+        else:
+            # Fetch existing cards
+            result = await session.execute(
+                text("""
+                    SELECT card_id, quantity, zone, tags, is_commander, card_data
+                    FROM deck_cards
+                    WHERE deck_id = CAST(:deck_id AS uuid)
+                """),
+                {"deck_id": deck_id},
+            )
+            card_rows = result.fetchall()
+
+            for card_row in card_rows:
+                card_data = card_row[5] if card_row[5] else {}
+                if isinstance(card_data, str):
+                    card_data = json.loads(card_data)
+
+                cards.append(CardInDeck(
+                    id=card_row[0],
+                    name=card_data.get("name", "Unknown"),
+                    mana_cost=card_data.get("mana_cost"),
+                    cmc=card_data.get("cmc", 0),
+                    type_line=card_data.get("type_line", ""),
+                    colors=card_data.get("colors"),
+                    rarity=card_data.get("rarity", "common"),
+                    image_uri=card_data.get("image_uri"),
+                    quantity=card_row[1],
+                    zone=card_row[2] or "mainboard",
+                    tags=card_row[3] or [],
+                    isCommander=card_row[4] or False,
+                ))
+
         return DeckResponse(
             id=str(row[0]),
             name=row[1],
-            description=row[2],
-            created_at=row[3].isoformat() if row[3] else None,
-            updated_at=row[4].isoformat() if row[4] else None,
+            format=row[2] or "Standard",
+            description=row[3],
+            cards=cards,
+            createdAt=row[4].isoformat() if row[4] else None,
+            updatedAt=row[5].isoformat() if row[5] else None,
         )
 
 
@@ -224,7 +391,7 @@ async def delete_deck(
     """Delete a deck."""
     async with request.app.state.async_session() as session:
         result = await session.execute(
-            text("DELETE FROM decks WHERE id = :deck_id::uuid AND user_id = :user_id::uuid RETURNING id"),
+            text("DELETE FROM decks WHERE id = CAST(:deck_id AS uuid) AND user_id = CAST(:user_id AS uuid) RETURNING id"),
             {"deck_id": deck_id, "user_id": token_data.user_id},
         )
         await session.commit()
@@ -232,158 +399,3 @@ async def delete_deck(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Deck not found"
             )
-
-
-@router.post("/decks/{deck_id}/cards", response_model=DeckCardResponse, status_code=status.HTTP_201_CREATED)
-async def add_card_to_deck(
-    request: Request,
-    card_data: DeckCardAdd,
-    deck_id: str = Path(...),
-    token_data: TokenData = Depends(verify_jwt_token),
-):
-    """Add a card to a deck."""
-    async with request.app.state.async_session() as session:
-        # Check deck ownership
-        result = await session.execute(
-            text("SELECT id FROM decks WHERE id = :deck_id::uuid AND user_id = :user_id::uuid"),
-            {"deck_id": deck_id, "user_id": token_data.user_id},
-        )
-        if not result.fetchone():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Deck not found"
-            )
-
-        # Upsert card (add or update quantity)
-        result = await session.execute(
-            text("""
-                INSERT INTO deck_cards (deck_id, card_id, quantity)
-                VALUES (:deck_id::uuid, :card_id, :quantity)
-                ON CONFLICT (deck_id, card_id)
-                DO UPDATE SET quantity = deck_cards.quantity + :quantity
-                RETURNING id, card_id, quantity
-            """),
-            {
-                "deck_id": deck_id,
-                "card_id": card_data.card_id,
-                "quantity": card_data.quantity,
-            },
-        )
-        await session.commit()
-
-        # Update deck's updated_at
-        await session.execute(
-            text("UPDATE decks SET updated_at = NOW() WHERE id = :deck_id::uuid"),
-            {"deck_id": deck_id},
-        )
-        await session.commit()
-
-        row = result.fetchone()
-
-        # Get card name
-        name_result = await session.execute(
-            text("SELECT name FROM cards WHERE id = :card_id"),
-            {"card_id": card_data.card_id},
-        )
-        name_row = name_result.fetchone()
-
-        return DeckCardResponse(
-            id=str(row[0]),
-            card_id=row[1],
-            quantity=row[2],
-            card_name=name_row[0] if name_row else None,
-        )
-
-
-@router.put("/decks/{deck_id}/cards/{card_id}", response_model=DeckCardResponse)
-async def update_card_quantity(
-    request: Request,
-    card_data: DeckCardUpdate,
-    deck_id: str = Path(...),
-    card_id: str = Path(...),
-    token_data: TokenData = Depends(verify_jwt_token),
-):
-    """Update a card's quantity in a deck."""
-    async with request.app.state.async_session() as session:
-        # Check deck ownership
-        result = await session.execute(
-            text("SELECT id FROM decks WHERE id = :deck_id::uuid AND user_id = :user_id::uuid"),
-            {"deck_id": deck_id, "user_id": token_data.user_id},
-        )
-        if not result.fetchone():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Deck not found"
-            )
-
-        result = await session.execute(
-            text("""
-                UPDATE deck_cards
-                SET quantity = :quantity
-                WHERE deck_id = :deck_id::uuid AND card_id = :card_id
-                RETURNING id, card_id, quantity
-            """),
-            {"deck_id": deck_id, "card_id": card_id, "quantity": card_data.quantity},
-        )
-        await session.commit()
-        row = result.fetchone()
-        if not row:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Card not in deck"
-            )
-
-        # Update deck's updated_at
-        await session.execute(
-            text("UPDATE decks SET updated_at = NOW() WHERE id = :deck_id::uuid"),
-            {"deck_id": deck_id},
-        )
-        await session.commit()
-
-        # Get card name
-        name_result = await session.execute(
-            text("SELECT name FROM cards WHERE id = :card_id"),
-            {"card_id": card_id},
-        )
-        name_row = name_result.fetchone()
-
-        return DeckCardResponse(
-            id=str(row[0]),
-            card_id=row[1],
-            quantity=row[2],
-            card_name=name_row[0] if name_row else None,
-        )
-
-
-@router.delete("/decks/{deck_id}/cards/{card_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def remove_card_from_deck(
-    request: Request,
-    deck_id: str = Path(...),
-    card_id: str = Path(...),
-    token_data: TokenData = Depends(verify_jwt_token),
-):
-    """Remove a card from a deck."""
-    async with request.app.state.async_session() as session:
-        # Check deck ownership
-        result = await session.execute(
-            text("SELECT id FROM decks WHERE id = :deck_id::uuid AND user_id = :user_id::uuid"),
-            {"deck_id": deck_id, "user_id": token_data.user_id},
-        )
-        if not result.fetchone():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Deck not found"
-            )
-
-        result = await session.execute(
-            text("DELETE FROM deck_cards WHERE deck_id = :deck_id::uuid AND card_id = :card_id RETURNING id"),
-            {"deck_id": deck_id, "card_id": card_id},
-        )
-        await session.commit()
-        if not result.fetchone():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Card not in deck"
-            )
-
-        # Update deck's updated_at
-        await session.execute(
-            text("UPDATE decks SET updated_at = NOW() WHERE id = :deck_id::uuid"),
-            {"deck_id": deck_id},
-        )
-        await session.commit()

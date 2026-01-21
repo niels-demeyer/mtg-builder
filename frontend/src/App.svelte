@@ -57,7 +57,7 @@
   onMount(async () => {
     await authStore.init();
     authInitialized = true;
-    deckStore.loadDecks();
+    await deckStore.loadDecks();
     currentView = getViewFromPath();
 
     // Redirect to login if accessing protected route without auth

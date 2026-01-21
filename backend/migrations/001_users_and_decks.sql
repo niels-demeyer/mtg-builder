@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS decks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
+    format VARCHAR(50) DEFAULT 'Standard',
     description TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
@@ -25,7 +26,11 @@ CREATE TABLE IF NOT EXISTS deck_cards (
     deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
     card_id VARCHAR(255) NOT NULL,
     quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
-    UNIQUE(deck_id, card_id)
+    zone VARCHAR(20) DEFAULT 'mainboard',
+    tags TEXT[] DEFAULT '{}',
+    is_commander BOOLEAN DEFAULT FALSE,
+    card_data JSONB,
+    UNIQUE(deck_id, card_id, zone)
 );
 
 -- Indexes for performance

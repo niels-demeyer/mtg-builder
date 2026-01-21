@@ -44,6 +44,7 @@ MIGRATIONS = [
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         name VARCHAR(100) NOT NULL,
+        format VARCHAR(50) DEFAULT 'Standard',
         description TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
@@ -55,13 +56,46 @@ MIGRATIONS = [
         deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
         card_id VARCHAR(255) NOT NULL,
         quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
-        UNIQUE(deck_id, card_id)
+        zone VARCHAR(20) DEFAULT 'mainboard',
+        tags TEXT[] DEFAULT '{}',
+        is_commander BOOLEAN DEFAULT FALSE,
+        card_data JSONB,
+        UNIQUE(deck_id, card_id, zone)
     );
 
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_decks_user_id ON decks(user_id);
     CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id);
     CREATE INDEX IF NOT EXISTS idx_deck_cards_card_id ON deck_cards(card_id);
+    """,
+    # Migration 002: Add enhanced deck fields (for existing databases)
+    """
+    -- Add format column to decks if not exists
+    ALTER TABLE decks ADD COLUMN IF NOT EXISTS format VARCHAR(50) DEFAULT 'Standard';
+
+    -- Add new columns to deck_cards if not exists
+    ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS zone VARCHAR(20) DEFAULT 'mainboard';
+    ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}';
+    ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS is_commander BOOLEAN DEFAULT FALSE;
+    ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS card_data JSONB;
+
+    -- Update unique constraint (only if old constraint exists)
+    DO $$
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'deck_cards_deck_id_card_id_key'
+        ) THEN
+            ALTER TABLE deck_cards DROP CONSTRAINT deck_cards_deck_id_card_id_key;
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'deck_cards_deck_id_card_id_zone_key'
+        ) THEN
+            ALTER TABLE deck_cards ADD CONSTRAINT deck_cards_deck_id_card_id_zone_key UNIQUE(deck_id, card_id, zone);
+        END IF;
+    END $$;
     """,
 ]
 

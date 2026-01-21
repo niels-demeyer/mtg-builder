@@ -4,7 +4,6 @@ import type {
   DeckStoreState,
   CardInDeck,
   DeckUpdates,
-  ScryfallCard,
   DeckFolder,
   CardZone,
   DisplayMode,
@@ -12,6 +11,9 @@ import type {
   DeckStats,
   DeckFormat,
 } from "$lib/types";
+import { apiFetch } from "$lib/api";
+
+const API_BASE = "http://localhost:8000/api/v1";
 
 // Helper function to calculate deck statistics
 function calculateDeckStats(cards: CardInDeck[]): DeckStats {
@@ -92,6 +94,30 @@ function calculateDeckStats(cards: CardInDeck[]): DeckStats {
   };
 }
 
+// Check if user is authenticated
+function isAuthenticated(): boolean {
+  return !!localStorage.getItem("auth-token");
+}
+
+// Debounce helper for saving to backend
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+function debouncedSave(deckId: string, cards: CardInDeck[]): void {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+  }
+  saveTimeout = setTimeout(async () => {
+    if (!isAuthenticated()) return;
+    try {
+      await apiFetch(`/decks/${deckId}`, {
+        method: "PUT",
+        body: JSON.stringify({ cards }),
+      });
+    } catch (e) {
+      console.error("Failed to save deck to backend:", e);
+    }
+  }, 1000); // Save after 1 second of inactivity
+}
+
 function createDeckStore() {
   const initialState: DeckStoreState = {
     decks: [],
@@ -120,30 +146,93 @@ function createDeckStore() {
     };
   }
 
+  // Convert backend deck response to frontend Deck type
+  function fromBackendDeck(backendDeck: {
+    id: string;
+    name: string;
+    format?: string;
+    description?: string | null;
+    cards?: Array<{
+      id: string;
+      name: string;
+      mana_cost?: string | null;
+      cmc?: number;
+      type_line?: string;
+      colors?: string[] | null;
+      rarity?: string;
+      image_uri?: string | null;
+      quantity?: number;
+      zone?: string;
+      tags?: string[];
+      isCommander?: boolean;
+    }>;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+  }): Deck {
+    return {
+      id: backendDeck.id,
+      name: backendDeck.name,
+      format: (backendDeck.format || "Standard") as DeckFormat,
+      description: backendDeck.description || "",
+      cards: (backendDeck.cards || []).map((card) => ({
+        id: card.id,
+        name: card.name,
+        mana_cost: card.mana_cost || undefined,
+        cmc: card.cmc || 0,
+        type_line: card.type_line || "",
+        colors: card.colors || undefined,
+        rarity: card.rarity || "common",
+        image_uri: card.image_uri || undefined,
+        quantity: card.quantity || 1,
+        zone: (card.zone || "mainboard") as CardZone,
+        tags: card.tags || [],
+        isCommander: card.isCommander || false,
+      })),
+      createdAt: backendDeck.createdAt || new Date().toISOString(),
+      updatedAt: backendDeck.updatedAt || new Date().toISOString(),
+    };
+  }
+
   return {
     subscribe,
 
-    // Load decks and folders from localStorage
-    loadDecks: (): void => {
-      const savedDecks = localStorage.getItem("mtg-decks");
+    // Load decks from backend (if authenticated) or localStorage
+    loadDecks: async (): Promise<void> => {
+      update((state) => ({ ...state, loading: true, error: null }));
+
+      // Always load folders from localStorage (not stored in backend yet)
       const savedFolders = localStorage.getItem("mtg-folders");
-
-      let decks: Deck[] = [];
       let folders: DeckFolder[] = [];
+      if (savedFolders) {
+        folders = JSON.parse(savedFolders) as DeckFolder[];
+      }
 
+      if (isAuthenticated()) {
+        try {
+          const response = await apiFetch("/decks");
+          if (response.ok) {
+            const backendDecks = await response.json();
+            const decks = backendDecks.map(fromBackendDeck);
+            update((state) => ({ ...state, decks, folders, loading: false }));
+            return;
+          }
+        } catch (e) {
+          console.error("Failed to load decks from backend:", e);
+        }
+      }
+
+      // Fallback to localStorage
+      const savedDecks = localStorage.getItem("mtg-decks");
+      let decks: Deck[] = [];
       if (savedDecks) {
         const parsed = JSON.parse(savedDecks) as Deck[];
         decks = parsed.map(migrateDeck);
       }
 
-      if (savedFolders) {
-        folders = JSON.parse(savedFolders) as DeckFolder[];
-      }
-
-      update((state) => ({ ...state, decks, folders }));
+      update((state) => ({ ...state, decks, folders, loading: false }));
     },
 
-    // Save decks to localStorage
+    // Save decks to localStorage (backup)
     saveToStorage: (decks: Deck[]): void => {
       localStorage.setItem("mtg-decks", JSON.stringify(decks));
     },
@@ -206,12 +295,12 @@ function createDeckStore() {
     },
 
     // Create a new deck
-    createDeck: (
+    createDeck: async (
       name: string,
       format: DeckFormat = "Standard",
       description: string = "",
       folderId?: string
-    ): Deck => {
+    ): Promise<Deck> => {
       const newDeck: Deck = {
         id: crypto.randomUUID(),
         name,
@@ -223,6 +312,36 @@ function createDeckStore() {
         updatedAt: new Date().toISOString(),
       };
 
+      if (isAuthenticated()) {
+        try {
+          const response = await apiFetch("/decks", {
+            method: "POST",
+            body: JSON.stringify({
+              name,
+              format,
+              description,
+              cards: [],
+            }),
+          });
+          if (response.ok) {
+            const backendDeck = await response.json();
+            const deck = fromBackendDeck(backendDeck);
+            deck.folderId = folderId; // Keep folder info locally
+
+            update((state) => {
+              const decks = [...state.decks, deck];
+              localStorage.setItem("mtg-decks", JSON.stringify(decks));
+              return { ...state, decks, currentDeck: deck };
+            });
+
+            return deck;
+          }
+        } catch (e) {
+          console.error("Failed to create deck on backend:", e);
+        }
+      }
+
+      // Fallback to local storage
       update((state) => {
         const decks = [...state.decks, newDeck];
         localStorage.setItem("mtg-decks", JSON.stringify(decks));
@@ -256,6 +375,20 @@ function createDeckStore() {
         );
 
         localStorage.setItem("mtg-decks", JSON.stringify(decks));
+
+        // Sync with backend
+        if (isAuthenticated()) {
+          apiFetch(`/decks/${updatedDeck.id}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              name: updates.name,
+              format: updates.format,
+              description: updates.description,
+              cards: updates.cards,
+            }),
+          }).catch((e) => console.error("Failed to update deck on backend:", e));
+        }
+
         return { ...state, decks, currentDeck: updatedDeck };
       });
     },
@@ -297,6 +430,10 @@ function createDeckStore() {
         );
 
         localStorage.setItem("mtg-decks", JSON.stringify(decks));
+
+        // Debounced sync with backend
+        debouncedSave(updatedDeck.id, cards);
+
         return { ...state, decks, currentDeck: updatedDeck };
       });
     },
@@ -325,6 +462,8 @@ function createDeckStore() {
         );
 
         localStorage.setItem("mtg-decks", JSON.stringify(decks));
+        debouncedSave(updatedDeck.id, cards);
+
         return { ...state, decks, currentDeck: updatedDeck };
       });
     },
@@ -349,6 +488,8 @@ function createDeckStore() {
         );
 
         localStorage.setItem("mtg-decks", JSON.stringify(decks));
+        debouncedSave(updatedDeck.id, cards);
+
         return { ...state, decks, currentDeck: updatedDeck };
       });
     },
@@ -377,6 +518,8 @@ function createDeckStore() {
         );
 
         localStorage.setItem("mtg-decks", JSON.stringify(decks));
+        debouncedSave(updatedDeck.id, cards);
+
         return { ...state, decks, currentDeck: updatedDeck };
       });
     },
@@ -403,6 +546,8 @@ function createDeckStore() {
         );
 
         localStorage.setItem("mtg-decks", JSON.stringify(decks));
+        debouncedSave(updatedDeck.id, cards);
+
         return { ...state, decks, currentDeck: updatedDeck };
       });
     },
@@ -438,12 +583,24 @@ function createDeckStore() {
         );
 
         localStorage.setItem("mtg-decks", JSON.stringify(decks));
+        debouncedSave(updatedDeck.id, cards);
+
         return { ...state, decks, currentDeck: updatedDeck };
       });
     },
 
     // Delete a deck
-    deleteDeck: (deckId: string): void => {
+    deleteDeck: async (deckId: string): Promise<void> => {
+      if (isAuthenticated()) {
+        try {
+          await apiFetch(`/decks/${deckId}`, {
+            method: "DELETE",
+          });
+        } catch (e) {
+          console.error("Failed to delete deck on backend:", e);
+        }
+      }
+
       update((state) => {
         const decks = state.decks.filter((d) => d.id !== deckId);
         localStorage.setItem("mtg-decks", JSON.stringify(decks));
