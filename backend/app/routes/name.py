@@ -4,7 +4,7 @@ from typing import Any
 from dataclasses import asdict
 from sqlalchemy import text
 from fastapi import HTTPException
-from models.dbmodels import DbCard
+from app.routes.dbmodels import DbCard
 
 router = APIRouter()
 

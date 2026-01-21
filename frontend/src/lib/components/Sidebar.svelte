@@ -1,5 +1,6 @@
 <script lang="ts">
   import { deckStore } from '../../stores/deckStore';
+  import { currentUser } from '../../stores/authStore';
   import type { Deck } from '$lib/types';
   import ResizeHandle from './ResizeHandle.svelte';
 
@@ -12,6 +13,8 @@
   }
 
   let { onNavigate, onSelectDeck, currentView = 'home', width = 260, onResize }: Props = $props();
+
+  let user = $derived($currentUser);
 
   let folders = $derived($deckStore.folders);
   let decks = $derived($deckStore.decks);
@@ -244,12 +247,12 @@
   <div class="sidebar-footer">
     <div class="separator"></div>
     
-    <button 
+    <button
       class="account-btn"
       onclick={() => showAccountMenu = !showAccountMenu}
     >
       <span class="account-avatar">👤</span>
-      <span class="account-label">Account</span>
+      <span class="account-label">{user?.username || 'Account'}</span>
       <span class="chevron">{showAccountMenu ? '▲' : '▼'}</span>
     </button>
 
@@ -263,6 +266,10 @@
         </button>
         <button class="account-menu-item" onclick={() => onNavigate('import-export')}>
           <span>↕</span> Import/Export
+        </button>
+        <div class="menu-separator"></div>
+        <button class="account-menu-item logout" onclick={() => onNavigate('logout')}>
+          <span>↪</span> Sign Out
         </button>
       </div>
     {/if}
@@ -687,5 +694,20 @@
   .account-menu-item:hover {
     background: hsl(var(--accent));
     color: hsl(var(--foreground));
+  }
+
+  .menu-separator {
+    height: 1px;
+    background: hsl(var(--border));
+    margin: 0.25rem 0.5rem;
+  }
+
+  .account-menu-item.logout {
+    color: hsl(var(--destructive));
+  }
+
+  .account-menu-item.logout:hover {
+    background: hsl(var(--destructive) / 0.1);
+    color: hsl(var(--destructive));
   }
 </style>

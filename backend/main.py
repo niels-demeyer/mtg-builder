@@ -8,9 +8,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import and include routers
-from routes.health import router as health_router
-from routes.name import router as name_router
-from routes.search import router as search_router
+from app.routes.health import router as health_router
+from app.routes.name import router as name_router
+from app.routes.search import router as search_router
+from app.routes.auth import router as auth_router
+from app.routes.decks import router as decks_router
 
 load_dotenv()
 
@@ -80,6 +82,14 @@ app.include_router(name_router,
 app.include_router(search_router,
                    prefix="/api/v1",
                    tags=["Search"])
+
+app.include_router(auth_router,
+                   prefix="/api/v1",
+                   tags=["Auth"])
+
+app.include_router(decks_router,
+                   prefix="/api/v1",
+                   tags=["Decks"])
 
 
 if __name__ == "__main__":

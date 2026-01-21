@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { deckStore } from './stores/deckStore';
+  import { authStore, isAuthenticated } from './stores/authStore';
   import Sidebar from './lib/components/Sidebar.svelte';
   import Home from './lib/components/Home.svelte';
   import DeckList from './lib/components/DeckList.svelte';
@@ -8,10 +9,12 @@
   import CardExplorer from './lib/components/CardExplorer.svelte';
   import Training from './lib/components/Training.svelte';
   import NewDeckModal from './lib/components/NewDeckModal.svelte';
+  import Login from './lib/components/Login.svelte';
+  import Register from './lib/components/Register.svelte';
   import type { Deck } from './lib/types';
 
-  type ViewType = 'home' | 'decks' | 'builder' | 'explorer' | 'training' | 'settings' | 'collection' | 'import-export';
-  
+  type ViewType = 'home' | 'decks' | 'builder' | 'explorer' | 'training' | 'settings' | 'collection' | 'import-export' | 'login' | 'register';
+
   const routes: Record<string, ViewType> = {
     '/': 'home',
     '/home': 'home',
@@ -21,8 +24,18 @@
     '/training': 'training',
     '/settings': 'settings',
     '/collection': 'collection',
-    '/import-export': 'import-export'
+    '/import-export': 'import-export',
+    '/login': 'login',
+    '/register': 'register'
   };
+
+  // Views that don't require authentication
+  const publicViews: ViewType[] = ['login', 'register'];
+
+  // Views that show without sidebar (auth pages)
+  const noSidebarViews: ViewType[] = ['login', 'register'];
+
+  let authInitialized = $state(false);
 
   let currentView = $state<ViewType>('home');
   let showNewDeckModal = $state(false);
@@ -41,9 +54,17 @@
     currentView = getViewFromPath();
   }
 
-  onMount(() => {
+  onMount(async () => {
+    await authStore.init();
+    authInitialized = true;
     deckStore.loadDecks();
     currentView = getViewFromPath();
+
+    // Redirect to login if accessing protected route without auth
+    if (!$isAuthenticated && !publicViews.includes(currentView)) {
+      navigateTo('/login');
+    }
+
     window.addEventListener('popstate', handlePopState);
   });
 
@@ -74,6 +95,13 @@
       navigateTo('/collection');
     } else if (view === 'import-export') {
       navigateTo('/import-export');
+    } else if (view === 'login') {
+      navigateTo('/login');
+    } else if (view === 'register') {
+      navigateTo('/register');
+    } else if (view === 'logout') {
+      authStore.logout();
+      navigateTo('/login');
     }
   }
 
@@ -106,44 +134,56 @@
   }
 </script>
 
-<div class="app-layout">
-  <Sidebar 
-    onNavigate={handleNavigate} 
-    onSelectDeck={handleSelectDeck}
-    currentView={currentView}
-    width={sidebarWidth}
-    onResize={handleSidebarResize}
-  />
+{#if !authInitialized}
+  <div class="loading-screen">
+    <div class="loading-spinner"></div>
+  </div>
+{:else if noSidebarViews.includes(currentView)}
+  {#if currentView === 'login'}
+    <Login onNavigate={handleNavigate} />
+  {:else if currentView === 'register'}
+    <Register onNavigate={handleNavigate} />
+  {/if}
+{:else}
+  <div class="app-layout">
+    <Sidebar
+      onNavigate={handleNavigate}
+      onSelectDeck={handleSelectDeck}
+      currentView={currentView}
+      width={sidebarWidth}
+      onResize={handleSidebarResize}
+    />
 
-  <main class="main-content">
-    {#if currentView === 'home'}
-      <Home onNavigate={handleNavigate} />
-    {:else if currentView === 'decks'}
-      <DeckList onNavigate={handleNavigate} onEdit={handleEditDeck} />
-    {:else if currentView === 'builder'}
-      <DeckBuilder onBack={handleBackToDecks} />
-    {:else if currentView === 'explorer'}
-      <CardExplorer />
-    {:else if currentView === 'training'}
-      <Training />
-    {:else if currentView === 'settings'}
-      <div class="placeholder-view">
-        <h2>Settings</h2>
-        <p>Settings view coming soon...</p>
-      </div>
-    {:else if currentView === 'collection'}
-      <div class="placeholder-view">
-        <h2>My Collection</h2>
-        <p>Collection management coming soon...</p>
-      </div>
-    {:else if currentView === 'import-export'}
-      <div class="placeholder-view">
-        <h2>Import / Export</h2>
-        <p>Import and export functionality coming soon...</p>
-      </div>
-    {/if}
-  </main>
-</div>
+    <main class="main-content">
+      {#if currentView === 'home'}
+        <Home onNavigate={handleNavigate} />
+      {:else if currentView === 'decks'}
+        <DeckList onNavigate={handleNavigate} onEdit={handleEditDeck} />
+      {:else if currentView === 'builder'}
+        <DeckBuilder onBack={handleBackToDecks} />
+      {:else if currentView === 'explorer'}
+        <CardExplorer />
+      {:else if currentView === 'training'}
+        <Training />
+      {:else if currentView === 'settings'}
+        <div class="placeholder-view">
+          <h2>Settings</h2>
+          <p>Settings view coming soon...</p>
+        </div>
+      {:else if currentView === 'collection'}
+        <div class="placeholder-view">
+          <h2>My Collection</h2>
+          <p>Collection management coming soon...</p>
+        </div>
+      {:else if currentView === 'import-export'}
+        <div class="placeholder-view">
+          <h2>Import / Export</h2>
+          <p>Import and export functionality coming soon...</p>
+        </div>
+      {/if}
+    </main>
+  </div>
+{/if}
 
 {#if showNewDeckModal}
   <NewDeckModal
@@ -186,5 +226,28 @@
   .placeholder-view p {
     color: hsl(var(--muted-foreground));
     font-size: 0.9375rem;
+  }
+
+  .loading-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-bg);
+  }
+
+  .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid hsl(var(--border));
+    border-top-color: hsl(var(--foreground));
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>

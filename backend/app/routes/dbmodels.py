@@ -1,5 +1,7 @@
 from typing import Optional, List, Dict
 from dataclasses import dataclass
+from datetime import datetime
+
 
 @dataclass
 class ImageUris:
@@ -9,6 +11,7 @@ class ImageUris:
     png: str
     art_crop: str
     border_crop: str
+
 
 @dataclass
 class DbCard:
@@ -28,3 +31,29 @@ class DbCard:
     set_name: str = ""
     image_uris: Optional[ImageUris] = None
     legalities: Optional[Dict[str, str]] = None
+
+
+@dataclass
+class User:
+    id: str
+    username: str
+    password_hash: str
+    created_at: Optional[datetime] = None
+
+
+@dataclass
+class Deck:
+    id: str
+    user_id: str
+    name: str
+    description: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class DeckCard:
+    id: str
+    deck_id: str
+    card_id: str
+    quantity: int = 1
