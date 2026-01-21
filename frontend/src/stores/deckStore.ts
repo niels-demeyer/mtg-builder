@@ -11,9 +11,7 @@ import type {
   DeckStats,
   DeckFormat,
 } from "$lib/types";
-import { apiFetch } from "$lib/api";
-
-const API_BASE = "http://localhost:8000/api/v1";
+import { apiFetch, API_BASE } from "$lib/api";
 
 // Helper function to calculate deck statistics
 function calculateDeckStats(cards: CardInDeck[]): DeckStats {
@@ -99,23 +97,70 @@ function isAuthenticated(): boolean {
   return !!localStorage.getItem("auth-token");
 }
 
-// Debounce helper for saving to backend
+// Pending save state
+let pendingSave: { deckId: string; cards: CardInDeck[] } | null = null;
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+// Immediately save to backend
+async function saveToBackend(deckId: string, cards: CardInDeck[]): Promise<void> {
+  if (!isAuthenticated()) return;
+  try {
+    const response = await apiFetch(`/decks/${deckId}`, {
+      method: "PUT",
+      body: JSON.stringify({ cards }),
+    });
+    if (!response.ok) {
+      console.error("Failed to save deck:", await response.text());
+    } else {
+      pendingSave = null;
+    }
+  } catch (e) {
+    console.error("Failed to save deck to backend:", e);
+  }
+}
+
+// Debounce helper for saving to backend
 function debouncedSave(deckId: string, cards: CardInDeck[]): void {
+  pendingSave = { deckId, cards };
   if (saveTimeout) {
     clearTimeout(saveTimeout);
   }
-  saveTimeout = setTimeout(async () => {
-    if (!isAuthenticated()) return;
-    try {
-      await apiFetch(`/decks/${deckId}`, {
-        method: "PUT",
-        body: JSON.stringify({ cards }),
-      });
-    } catch (e) {
-      console.error("Failed to save deck to backend:", e);
-    }
+  saveTimeout = setTimeout(() => {
+    saveToBackend(deckId, cards);
   }, 1000); // Save after 1 second of inactivity
+}
+
+// Flush pending saves (call on page unload)
+export function flushPendingSave(): void {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+  }
+  if (pendingSave && isAuthenticated()) {
+    // Use sendBeacon for reliable delivery on page unload
+    const token = localStorage.getItem("auth-token");
+    const url = `${API_BASE}/decks/${pendingSave.deckId}`;
+    const data = JSON.stringify({ cards: pendingSave.cards });
+
+    // sendBeacon doesn't support custom headers, so we fall back to sync XHR
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url, false); // synchronous
+    xhr.setRequestHeader("Content-Type", "application/json");
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
+    try {
+      xhr.send(data);
+    } catch (e) {
+      console.error("Failed to flush save:", e);
+    }
+    pendingSave = null;
+  }
+}
+
+// Register beforeunload handler
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", flushPendingSave);
 }
 
 function createDeckStore() {

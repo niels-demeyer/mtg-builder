@@ -26,11 +26,11 @@
     'Brawl',
   ];
 
-  function handleSubmit(event: Event): void {
+  async function handleSubmit(event: Event): Promise<void> {
     event.preventDefault();
     if (!name.trim()) return;
 
-    const deck = deckStore.createDeck(name.trim(), format, description.trim());
+    const deck = await deckStore.createDeck(name.trim(), format, description.trim());
     onComplete(deck);
   }
 

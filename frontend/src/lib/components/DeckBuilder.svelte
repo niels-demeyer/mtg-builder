@@ -1,6 +1,12 @@
 <script lang="ts">
-  import { deckStore } from '../../stores/deckStore';
+  import { onDestroy } from 'svelte';
+  import { deckStore, flushPendingSave } from '../../stores/deckStore';
   import type { ScryfallCard, CardInDeck, CardZone, DisplayMode, PileSortBy } from '$lib/types';
+
+  // Flush any pending saves when leaving the deck builder
+  onDestroy(() => {
+    flushPendingSave();
+  });
   import DeckStats from './DeckStats.svelte';
   import CardPreview from './CardPreview.svelte';
   import ResizeHandle from './ResizeHandle.svelte';
