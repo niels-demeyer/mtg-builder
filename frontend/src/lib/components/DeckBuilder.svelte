@@ -30,6 +30,59 @@
   let showStats = $state(true);
   let draggedCard = $state<CardInDeck | null>(null);
 
+  // Advanced search state
+  let showAdvanced = $state(false);
+  let currentPage = $state(1);
+  let hasMore = $state(false);
+  let totalResults = $state(0);
+
+  interface SearchFilters {
+    text: string;
+    colors: Set<string>;
+    colorMatch: 'any' | 'all' | 'exact';
+    types: Set<string>;
+    rarity: Set<string>;
+    cmcMin: string;
+    cmcMax: string;
+    keywords: string;
+  }
+
+  let filters = $state<SearchFilters>({
+    text: '',
+    colors: new Set(),
+    colorMatch: 'any',
+    types: new Set(),
+    rarity: new Set(),
+    cmcMin: '',
+    cmcMax: '',
+    keywords: ''
+  });
+
+  const COLORS = [
+    { code: 'W', name: 'White', symbol: '○' },
+    { code: 'U', name: 'Blue', symbol: '●' },
+    { code: 'B', name: 'Black', symbol: '◆' },
+    { code: 'R', name: 'Red', symbol: '▲' },
+    { code: 'G', name: 'Green', symbol: '◼' },
+    { code: 'C', name: 'Colorless', symbol: '◇' }
+  ];
+
+  const CARD_TYPES = [
+    'Creature', 'Instant', 'Sorcery', 'Enchantment',
+    'Artifact', 'Planeswalker', 'Land', 'Battle'
+  ];
+
+  const RARITIES = [
+    { code: 'common', name: 'C' },
+    { code: 'uncommon', name: 'U' },
+    { code: 'rare', name: 'R' },
+    { code: 'mythic', name: 'M' }
+  ];
+
+  // Hover preview state
+  let hoveredCard = $state<ScryfallCard | null>(null);
+  let hoverPosition = $state({ x: 0, y: 0 });
+
   // Resizable panel widths
   let searchPanelWidth = $state(320);
   let rightPanelWidth = $state(280);
@@ -66,33 +119,157 @@
     { id: 'rarity', label: 'Rarity' },
   ];
 
-  async function searchCards(): Promise<void> {
-    if (searchQuery.length < 2) {
+  function toggleColor(code: string): void {
+    const newColors = new Set(filters.colors);
+    if (newColors.has(code)) {
+      newColors.delete(code);
+    } else {
+      newColors.add(code);
+    }
+    filters.colors = newColors;
+  }
+
+  function toggleType(type: string): void {
+    const newTypes = new Set(filters.types);
+    if (newTypes.has(type)) {
+      newTypes.delete(type);
+    } else {
+      newTypes.add(type);
+    }
+    filters.types = newTypes;
+  }
+
+  function toggleRarity(code: string): void {
+    const newRarity = new Set(filters.rarity);
+    if (newRarity.has(code)) {
+      newRarity.delete(code);
+    } else {
+      newRarity.add(code);
+    }
+    filters.rarity = newRarity;
+  }
+
+  function hasAnyFilter(): boolean {
+    return (
+      searchQuery.length >= 2 ||
+      filters.text.length >= 2 ||
+      filters.colors.size > 0 ||
+      filters.types.size > 0 ||
+      filters.rarity.size > 0 ||
+      filters.cmcMin !== '' ||
+      filters.cmcMax !== '' ||
+      filters.keywords.length >= 2
+    );
+  }
+
+  function clearFilters(): void {
+    filters = {
+      text: '',
+      colors: new Set(),
+      colorMatch: 'any',
+      types: new Set(),
+      rarity: new Set(),
+      cmcMin: '',
+      cmcMax: '',
+      keywords: ''
+    };
+    searchQuery = '';
+    searchResults = [];
+    currentPage = 1;
+    hasMore = false;
+    totalResults = 0;
+  }
+
+  async function searchCards(page: number = 1, append: boolean = false): Promise<void> {
+    if (!hasAnyFilter()) {
       searchResults = [];
       return;
     }
 
     isSearching = true;
+    currentPage = page;
+
     try {
+      const params = new URLSearchParams();
+
+      if (searchQuery.length >= 2) params.set('q', searchQuery);
+      if (filters.text.length >= 2) params.set('text', filters.text);
+      if (filters.colors.size > 0) {
+        params.set('colors', Array.from(filters.colors).join(','));
+        params.set('color_match', filters.colorMatch);
+      }
+      if (filters.types.size > 0) params.set('types', Array.from(filters.types).join(','));
+      if (filters.rarity.size > 0) params.set('rarity', Array.from(filters.rarity).join(','));
+      if (filters.cmcMin !== '') params.set('cmc_min', filters.cmcMin);
+      if (filters.cmcMax !== '') params.set('cmc_max', filters.cmcMax);
+      if (filters.keywords.length >= 2) params.set('keywords', filters.keywords);
+      params.set('page', String(page));
+      params.set('page_size', '30');
+
       const response = await fetch(
-        `https://api.scryfall.com/cards/search?q=${encodeURIComponent(searchQuery)}`
+        `http://localhost:8000/api/v1/search?${params.toString()}`
       );
       if (response.ok) {
         const data = await response.json();
-        searchResults = data.data || [];
+        const results = (data.data || []).map((card: ScryfallCard) => ({
+          ...card,
+          image_uris: card.image_uris || { small: '', normal: '', large: '' }
+        }));
+
+        if (append) {
+          searchResults = [...searchResults, ...results];
+        } else {
+          searchResults = results;
+        }
+
+        if (data.pagination) {
+          hasMore = data.pagination.has_next;
+          totalResults = data.pagination.total_cards;
+        } else {
+          hasMore = false;
+          totalResults = results.length;
+        }
       } else {
-        searchResults = [];
+        if (!append) searchResults = [];
+        hasMore = false;
       }
     } catch {
-      searchResults = [];
+      if (!append) searchResults = [];
+      hasMore = false;
     } finally {
       isSearching = false;
     }
   }
 
+  function loadMore(): void {
+    if (!isSearching && hasMore) {
+      searchCards(currentPage + 1, true);
+    }
+  }
+
   function handleSearchInput(): void {
     clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(searchCards, 300);
+    searchTimeout = setTimeout(() => searchCards(1, false), 300);
+  }
+
+  function handleSearchKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Enter') {
+      clearTimeout(searchTimeout);
+      searchCards(1, false);
+    }
+  }
+
+  function handleCardHover(card: ScryfallCard, event: MouseEvent): void {
+    hoveredCard = card;
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    hoverPosition = {
+      x: rect.right + 10,
+      y: rect.top
+    };
+  }
+
+  function handleCardHoverEnd(): void {
+    hoveredCard = null;
   }
 
   function addCardToDeck(card: ScryfallCard, zone: CardZone = selectedZone): void {
@@ -264,11 +441,121 @@
           placeholder="Search for cards..."
           bind:value={searchQuery}
           oninput={handleSearchInput}
+          onkeydown={handleSearchKeydown}
         />
+        <button
+          class="toggle-advanced-btn"
+          class:active={showAdvanced}
+          onclick={() => showAdvanced = !showAdvanced}
+          title="Advanced Search"
+        >
+          ⚙
+        </button>
         {#if isSearching}
           <span class="search-spinner">⟳</span>
         {/if}
       </div>
+
+      {#if showAdvanced}
+        <div class="advanced-filters">
+          <div class="filter-group">
+            <label for="filter-text">Oracle Text</label>
+            <input
+              id="filter-text"
+              type="text"
+              placeholder="Card text..."
+              bind:value={filters.text}
+              onkeydown={handleSearchKeydown}
+            />
+          </div>
+
+          <div class="filter-group">
+            <label for="filter-keywords">Keywords</label>
+            <input
+              id="filter-keywords"
+              type="text"
+              placeholder="Flying, Trample..."
+              bind:value={filters.keywords}
+              onkeydown={handleSearchKeydown}
+            />
+          </div>
+
+          <div class="filter-group">
+            <span class="filter-label">Colors</span>
+            <div class="color-buttons">
+              {#each COLORS as color}
+                <button
+                  class="color-btn color-{color.code.toLowerCase()}"
+                  class:selected={filters.colors.has(color.code)}
+                  onclick={() => toggleColor(color.code)}
+                  title={color.name}
+                >
+                  {color.symbol}
+                </button>
+              {/each}
+            </div>
+            <select class="color-match-select" bind:value={filters.colorMatch}>
+              <option value="any">Any</option>
+              <option value="all">All</option>
+              <option value="exact">Exact</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <span class="filter-label">Types</span>
+            <div class="type-buttons">
+              {#each CARD_TYPES as type}
+                <button
+                  class="type-btn"
+                  class:selected={filters.types.has(type)}
+                  onclick={() => toggleType(type)}
+                >
+                  {type.slice(0, 4)}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <span class="filter-label">Rarity</span>
+            <div class="rarity-buttons">
+              {#each RARITIES as rarity}
+                <button
+                  class="rarity-btn rarity-{rarity.code}"
+                  class:selected={filters.rarity.has(rarity.code)}
+                  onclick={() => toggleRarity(rarity.code)}
+                  title={rarity.code}
+                >
+                  {rarity.name}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <span class="filter-label">CMC</span>
+            <div class="cmc-inputs">
+              <input
+                type="number"
+                placeholder="Min"
+                min="0"
+                bind:value={filters.cmcMin}
+                onkeydown={handleSearchKeydown}
+              />
+              <span>-</span>
+              <input
+                type="number"
+                placeholder="Max"
+                min="0"
+                bind:value={filters.cmcMax}
+                onkeydown={handleSearchKeydown}
+              />
+            </div>
+          </div>
+
+          <button class="clear-filters-btn" onclick={clearFilters}>Clear All</button>
+        </div>
+      {/if}
 
       <div class="add-to-zone">
         <span class="label">Add to:</span>
@@ -280,14 +567,21 @@
       </div>
 
       <div class="search-results">
+        {#if totalResults > 0}
+          <div class="results-header">
+            <span class="results-count">{totalResults} cards found</span>
+          </div>
+        {/if}
         {#if searchResults.length > 0}
           {#each searchResults as card}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div 
+            <div
               class="search-card"
               draggable="true"
               role="listitem"
               ondragstart={(e) => handleDragStart(e, { ...card, quantity: 1, zone: 'mainboard', tags: [] } as CardInDeck)}
+              onmouseenter={(e) => handleCardHover(card, e)}
+              onmouseleave={handleCardHoverEnd}
             >
               <img
                 src={card.image_uris?.small || card.card_faces?.[0]?.image_uris?.small || ''}
@@ -302,9 +596,14 @@
               <button class="add-btn" onclick={() => addCardToDeck(card)}>+</button>
             </div>
           {/each}
-        {:else if searchQuery.length >= 2 && !isSearching}
+          {#if hasMore}
+            <button class="load-more-btn" onclick={loadMore} disabled={isSearching}>
+              {isSearching ? 'Loading...' : 'Load More'}
+            </button>
+          {/if}
+        {:else if hasAnyFilter() && !isSearching}
           <p class="no-results">No cards found</p>
-        {:else if searchQuery.length < 2}
+        {:else if !hasAnyFilter()}
           <p class="search-hint">Type at least 2 characters to search</p>
         {/if}
       </div>
@@ -506,6 +805,32 @@
       </aside>
     {/if}
   </div>
+
+  <!-- Hover Preview -->
+  {#if hoveredCard}
+    <div
+      class="hover-preview"
+      style="left: {hoverPosition.x}px; top: {hoverPosition.y}px;"
+    >
+      <div class="hover-preview-image">
+        <img
+          src={hoveredCard.image_uris?.normal || hoveredCard.card_faces?.[0]?.image_uris?.normal || ''}
+          alt={hoveredCard.name}
+        />
+      </div>
+      <div class="hover-preview-details">
+        <h4>{hoveredCard.name}</h4>
+        <p class="hover-type">{hoveredCard.type_line}</p>
+        {#if hoveredCard.oracle_text}
+          <p class="hover-oracle">{hoveredCard.oracle_text}</p>
+        {/if}
+        <div class="hover-stats">
+          <span class="hover-mana">{hoveredCard.mana_cost || 'No cost'}</span>
+          <span class="hover-rarity rarity-{hoveredCard.rarity}">{hoveredCard.rarity}</span>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -653,6 +978,27 @@
     color: hsl(var(--muted-foreground));
   }
 
+  .toggle-advanced-btn {
+    position: absolute;
+    right: 2.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: hsl(var(--muted-foreground));
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0.25rem;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+  }
+
+  .toggle-advanced-btn:hover,
+  .toggle-advanced-btn.active {
+    color: hsl(var(--primary));
+    background: hsl(var(--accent));
+  }
+
   .search-spinner {
     position: absolute;
     right: 1.5rem;
@@ -776,6 +1122,227 @@
     color: hsl(var(--muted-foreground));
     font-size: 0.8125rem;
     padding: 2rem 1rem;
+  }
+
+  /* Advanced Filters */
+  .advanced-filters {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid hsl(var(--border));
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .filter-group label,
+  .filter-label {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .filter-group input[type="text"],
+  .filter-group input[type="number"] {
+    padding: 0.5rem 0.625rem;
+    background: hsl(var(--secondary));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-sm);
+    color: hsl(var(--foreground));
+    font-size: 0.8125rem;
+  }
+
+  .filter-group input:focus {
+    outline: none;
+    border-color: hsl(var(--ring));
+  }
+
+  /* Color Buttons */
+  .color-buttons {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+  }
+
+  .color-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid hsl(var(--border));
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    padding: 0;
+  }
+
+  .color-btn.color-w { background: linear-gradient(135deg, #fffbd5, #f8f6e1); color: #9b8e4e; }
+  .color-btn.color-u { background: linear-gradient(135deg, #0e68ab, #1a88c9); color: #fff; }
+  .color-btn.color-b { background: linear-gradient(135deg, #150b00, #3d3d3d); color: #a08c7e; }
+  .color-btn.color-r { background: linear-gradient(135deg, #d32029, #f34336); color: #fff; }
+  .color-btn.color-g { background: linear-gradient(135deg, #00733e, #19a654); color: #fff; }
+  .color-btn.color-c { background: linear-gradient(135deg, #a8a8a8, #d4d4d4); color: #4a4a4a; }
+
+  .color-btn:hover {
+    transform: scale(1.1);
+  }
+
+  .color-btn.selected {
+    border-color: hsl(var(--primary));
+    box-shadow: 0 0 0 2px hsl(var(--primary) / 0.3);
+  }
+
+  .color-match-select {
+    margin-top: 0.25rem;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    background: hsl(var(--secondary));
+    color: hsl(var(--foreground));
+  }
+
+  /* Type Buttons */
+  .type-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  .type-btn {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-sm);
+    background: hsl(var(--secondary));
+    color: hsl(var(--muted-foreground));
+    font-size: 0.6875rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .type-btn:hover {
+    border-color: hsl(var(--muted-foreground));
+  }
+
+  .type-btn.selected {
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    border-color: hsl(var(--primary));
+  }
+
+  /* Rarity Buttons */
+  .rarity-buttons {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .rarity-btn {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-sm);
+    background: hsl(var(--secondary));
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .rarity-btn.rarity-common { color: #666; }
+  .rarity-btn.rarity-uncommon { color: #607d8b; }
+  .rarity-btn.rarity-rare { color: #b8860b; }
+  .rarity-btn.rarity-mythic { color: #d84315; }
+
+  .rarity-btn:hover {
+    border-color: hsl(var(--muted-foreground));
+  }
+
+  .rarity-btn.selected {
+    border-width: 2px;
+  }
+
+  .rarity-btn.selected.rarity-common { background: #e0e0e0; border-color: #666; }
+  .rarity-btn.selected.rarity-uncommon { background: #cfd8dc; border-color: #607d8b; }
+  .rarity-btn.selected.rarity-rare { background: #fff8e1; border-color: #b8860b; }
+  .rarity-btn.selected.rarity-mythic { background: #ffebee; border-color: #d84315; }
+
+  /* CMC Inputs */
+  .cmc-inputs {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .cmc-inputs input {
+    width: 50px;
+    padding: 0.375rem;
+    text-align: center;
+  }
+
+  .cmc-inputs span {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+  }
+
+  /* Clear Filters Button */
+  .clear-filters-btn {
+    margin-top: 0.25rem;
+    padding: 0.5rem;
+    background: transparent;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-sm);
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .clear-filters-btn:hover {
+    background: hsl(var(--destructive) / 0.1);
+    border-color: hsl(var(--destructive));
+    color: hsl(var(--destructive));
+  }
+
+  /* Results Header */
+  .results-header {
+    padding: 0.5rem;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+
+  .results-count {
+    font-size: 0.75rem;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* Load More Button */
+  .load-more-btn {
+    width: 100%;
+    padding: 0.75rem;
+    margin-top: 0.5rem;
+    background: hsl(var(--secondary));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-md);
+    color: hsl(var(--foreground));
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .load-more-btn:hover:not(:disabled) {
+    background: hsl(var(--accent));
+    border-color: hsl(var(--ring));
+  }
+
+  .load-more-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   /* Main Deck Area */
@@ -1257,4 +1824,102 @@
     gap: 1rem;
     flex-shrink: 0;
   }
+
+  /* Hover Preview */
+  .hover-preview {
+    position: fixed;
+    z-index: 1000;
+    display: flex;
+    gap: 0.75rem;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-lg);
+    padding: 0.75rem;
+    box-shadow: var(--shadow-lg);
+    max-width: 420px;
+    pointer-events: none;
+    animation: fadeIn 0.15s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateX(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .hover-preview-image {
+    flex-shrink: 0;
+  }
+
+  .hover-preview-image img {
+    width: 180px;
+    height: auto;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+  }
+
+  .hover-preview-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+    max-width: 200px;
+  }
+
+  .hover-preview-details h4 {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: hsl(var(--foreground));
+    line-height: 1.2;
+  }
+
+  .hover-type {
+    margin: 0;
+    font-size: 0.75rem;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .hover-oracle {
+    margin: 0;
+    font-size: 0.75rem;
+    color: hsl(var(--foreground));
+    line-height: 1.4;
+    max-height: 120px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+
+  .hover-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: auto;
+    padding-top: 0.5rem;
+    border-top: 1px solid hsl(var(--border));
+  }
+
+  .hover-mana {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .hover-rarity {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: capitalize;
+    padding: 0.125rem 0.375rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .hover-rarity.rarity-common { background: #e0e0e0; color: #1a1a1a; }
+  .hover-rarity.rarity-uncommon { background: #607d8b; color: #fff; }
+  .hover-rarity.rarity-rare { background: #b8860b; color: #fff; }
+  .hover-rarity.rarity-mythic { background: #d84315; color: #fff; }
 </style>
