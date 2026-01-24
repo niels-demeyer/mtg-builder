@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 
 load_dotenv(backend_dir / ".env")
 
+MIGRATIONS_DIR = Path(__file__).parent
+
 
 def get_connection():
     """Get a database connection from DATABASE_URL."""
@@ -28,76 +30,13 @@ def get_connection():
     return psycopg2.connect(db_url)
 
 
-MIGRATIONS = [
-    # Migration 001: Users and Decks
-    """
-    -- Users table
-    CREATE TABLE IF NOT EXISTS users (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        username VARCHAR(50) UNIQUE NOT NULL,
-        password_hash VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT NOW()
-    );
-
-    -- Decks table
-    CREATE TABLE IF NOT EXISTS decks (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        name VARCHAR(100) NOT NULL,
-        format VARCHAR(50) DEFAULT 'Standard',
-        description TEXT,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-    );
-
-    -- Deck cards junction table
-    CREATE TABLE IF NOT EXISTS deck_cards (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
-        card_id VARCHAR(255) NOT NULL,
-        quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
-        zone VARCHAR(20) DEFAULT 'mainboard',
-        tags TEXT[] DEFAULT '{}',
-        is_commander BOOLEAN DEFAULT FALSE,
-        card_data JSONB,
-        UNIQUE(deck_id, card_id, zone)
-    );
-
-    -- Indexes for performance
-    CREATE INDEX IF NOT EXISTS idx_decks_user_id ON decks(user_id);
-    CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards(deck_id);
-    CREATE INDEX IF NOT EXISTS idx_deck_cards_card_id ON deck_cards(card_id);
-    """,
-    # Migration 002: Add enhanced deck fields (for existing databases)
-    """
-    -- Add format column to decks if not exists
-    ALTER TABLE decks ADD COLUMN IF NOT EXISTS format VARCHAR(50) DEFAULT 'Standard';
-
-    -- Add new columns to deck_cards if not exists
-    ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS zone VARCHAR(20) DEFAULT 'mainboard';
-    ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}';
-    ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS is_commander BOOLEAN DEFAULT FALSE;
-    ALTER TABLE deck_cards ADD COLUMN IF NOT EXISTS card_data JSONB;
-
-    -- Update unique constraint (only if old constraint exists)
-    DO $$
-    BEGIN
-        IF EXISTS (
-            SELECT 1 FROM pg_constraint
-            WHERE conname = 'deck_cards_deck_id_card_id_key'
-        ) THEN
-            ALTER TABLE deck_cards DROP CONSTRAINT deck_cards_deck_id_card_id_key;
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint
-            WHERE conname = 'deck_cards_deck_id_card_id_zone_key'
-        ) THEN
-            ALTER TABLE deck_cards ADD CONSTRAINT deck_cards_deck_id_card_id_zone_key UNIQUE(deck_id, card_id, zone);
-        END IF;
-    END $$;
-    """,
-]
+def get_migrations():
+    """Load migrations from .sql files in the migrations directory."""
+    sql_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
+    migrations = []
+    for sql_file in sql_files:
+        migrations.append((sql_file.name, sql_file.read_text()))
+    return migrations
 
 
 def run_migrations():
@@ -106,12 +45,17 @@ def run_migrations():
     conn = get_connection()
     cursor = conn.cursor()
 
+    migrations = get_migrations()
+    if not migrations:
+        print("No .sql migration files found.")
+        return
+
     try:
-        for i, migration in enumerate(MIGRATIONS, 1):
-            print(f"Running migration {i}...")
-            cursor.execute(migration)
+        for filename, sql in migrations:
+            print(f"Running migration: {filename}...")
+            cursor.execute(sql)
             conn.commit()
-            print(f"Migration {i} complete.")
+            print(f"Migration {filename} complete.")
 
         print("\nAll migrations completed successfully!")
 
