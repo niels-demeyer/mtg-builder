@@ -135,7 +135,6 @@ async def create_deck(
                 "description": deck_data.description,
             },
         )
-        await session.commit()
         row = result.fetchone()
         deck_id = str(row[0])
 
@@ -155,12 +154,12 @@ async def create_deck(
             await session.execute(
                 text("""
                     INSERT INTO deck_cards (deck_id, card_id, quantity, zone, tags, is_commander, card_data)
-                    VALUES (CAST(:deck_id AS uuid), :card_id, :quantity, :zone, :tags, :is_commander, :card_data::jsonb)
+                    VALUES (CAST(:deck_id AS uuid), :card_id, :quantity, :zone, :tags, :is_commander, CAST(:card_data AS jsonb))
                     ON CONFLICT (deck_id, card_id, zone) DO UPDATE SET
                         quantity = :quantity,
                         tags = :tags,
                         is_commander = :is_commander,
-                        card_data = :card_data::jsonb
+                        card_data = CAST(:card_data AS jsonb)
                 """),
                 {
                     "deck_id": deck_id,
@@ -297,7 +296,6 @@ async def update_deck(
             """),
             params,
         )
-        await session.commit()
         row = result.fetchone()
 
         # Update cards if provided
@@ -324,7 +322,7 @@ async def update_deck(
                 await session.execute(
                     text("""
                         INSERT INTO deck_cards (deck_id, card_id, quantity, zone, tags, is_commander, card_data)
-                        VALUES (CAST(:deck_id AS uuid), :card_id, :quantity, :zone, :tags, :is_commander, :card_data::jsonb)
+                        VALUES (CAST(:deck_id AS uuid), :card_id, :quantity, :zone, :tags, :is_commander, CAST(:card_data AS jsonb))
                     """),
                     {
                         "deck_id": deck_id,
@@ -337,8 +335,6 @@ async def update_deck(
                     },
                 )
                 cards.append(card)
-
-            await session.commit()
         else:
             # Fetch existing cards
             result = await session.execute(
@@ -370,6 +366,8 @@ async def update_deck(
                     tags=card_row[3] or [],
                     isCommander=card_row[4] or False,
                 ))
+
+        await session.commit()
 
         return DeckResponse(
             id=str(row[0]),

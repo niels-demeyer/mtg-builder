@@ -295,6 +295,8 @@
     border-right: 1px solid hsl(var(--border));
     height: 100vh;
     overflow: hidden;
+    position: sticky;
+    top: 0;
   }
 
   .logo {
