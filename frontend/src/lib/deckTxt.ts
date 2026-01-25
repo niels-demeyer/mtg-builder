@@ -197,9 +197,27 @@ function parseCardLine(
   // "4x Lightning Bolt"
   // "4X Lightning Bolt"
   // "Lightning Bolt" (assume quantity 1)
+  // "1x Ashaya, Soul of the Wild (sld) 2014 [Commander{top}]"
+  // "1x Forest (tmt) 314 *F* [Land]"
 
-  // Remove set codes in parentheses or brackets, e.g., "(LEA)" or "[M21]"
-  line = line.replace(/\s*[\(\[][A-Z0-9]+[\)\]]\s*/gi, " ").trim();
+  // Remove foil markers like *F*
+  line = line.replace(/\s*\*F\*\s*/gi, " ");
+
+  // Remove tags in square brackets (can contain any characters): [Artifact], [Commander{top}]
+  line = line.replace(/\s*\[[^\]]*\]\s*/g, " ");
+
+  // Remove set codes in parentheses: (sld), (LEA), (m20)
+  line = line.replace(/\s*\([a-z0-9]+\)\s*/gi, " ");
+
+  // Remove collector numbers (standalone numbers after removing set codes)
+  line = line.replace(/\s+\d+\s*$/, "");
+  line = line.replace(/\s+\d+★?\s+/g, " ");
+
+  // Remove set codes with dashes like FUT-167, LEA-123, etc.
+  line = line.replace(/\s+[A-Z]+-\d+\s*/gi, " ");
+
+  // Clean up extra whitespace
+  line = line.replace(/\s+/g, " ").trim();
 
   // Try to match "quantity cardname" format
   const match = line.match(/^(\d+)\s*x?\s+(.+)$/i);

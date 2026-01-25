@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import { deckStore, flushPendingSave } from '../../stores/deckStore';
   import type { ScryfallCard, CardInDeck, CardZone, DisplayMode, PileSortBy } from '$lib/types';
+  import { downloadDeckAsTxt, parseDeckTxt, type ParsedDeck } from '$lib/deckTxt';
 
   // Flush any pending saves when leaving the deck builder
   onDestroy(() => {
@@ -82,6 +83,11 @@
   // Hover preview state
   let hoveredCard = $state<ScryfallCard | null>(null);
   let hoverPosition = $state({ x: 0, y: 0 });
+
+  // Import/Export state
+  let fileInput: HTMLInputElement | undefined = $state();
+  let isImporting = $state(false);
+  let importError = $state<string | null>(null);
 
   // Resizable panel widths
   let searchPanelWidth = $state(320);
@@ -273,13 +279,24 @@
   }
 
   function addCardToDeck(card: ScryfallCard, zone: CardZone = selectedZone): void {
+    // Ensure colors is always an array (API may return string)
+    const rawColors = card.colors as unknown;
+    let colors: string[];
+    if (typeof rawColors === 'string') {
+      colors = rawColors ? rawColors.split('') : [];
+    } else if (Array.isArray(rawColors)) {
+      colors = rawColors;
+    } else {
+      colors = [];
+    }
+
     const cardInDeck: Omit<CardInDeck, 'quantity' | 'zone' | 'tags'> = {
       id: card.id,
       name: card.name,
       mana_cost: card.mana_cost,
       cmc: card.cmc,
       type_line: card.type_line,
-      colors: card.colors,
+      colors,
       rarity: card.rarity,
       image_uri: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal,
     };
@@ -393,6 +410,130 @@
     draggedCard = null;
   }
 
+  // Export deck to txt file
+  function handleExport(): void {
+    if (currentDeck) {
+      downloadDeckAsTxt(currentDeck);
+    }
+  }
+
+  // Import deck from txt file
+  function handleImportClick(): void {
+    fileInput?.click();
+  }
+
+  async function handleFileSelect(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    isImporting = true;
+    importError = null;
+
+    try {
+      const content = await file.text();
+      const parsed = parseDeckTxt(content);
+      await importParsedDeck(parsed);
+    } catch (e) {
+      importError = e instanceof Error ? e.message : 'Failed to import deck';
+      console.error('Import error:', e);
+    } finally {
+      isImporting = false;
+      input.value = ''; // Reset file input
+    }
+  }
+
+  async function importParsedDeck(parsed: ParsedDeck): Promise<void> {
+    if (!currentDeck) {
+      importError = 'No deck selected';
+      return;
+    }
+
+    const notFound: string[] = [];
+    const skipped: string[] = [];
+    let importedCount = 0;
+
+    // Look up each card by name and add to deck
+    for (const card of parsed.cards) {
+      try {
+        // Check if card already exists in the deck (same zone)
+        const existingCard = currentDeck.cards.find(
+          (c) => c.name.toLowerCase() === card.name.toLowerCase() && c.zone === card.zone
+        );
+
+        if (existingCard) {
+          skipped.push(card.name);
+          continue;
+        }
+
+        // Search for the card by exact name (use larger page size to find exact matches)
+        const response = await fetch(
+          `http://localhost:8000/api/v1/search?q=${encodeURIComponent(card.name)}&page_size=10`
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          const results = data.data || [];
+
+          // Find exact name match
+          const match = results.find(
+            (c: ScryfallCard) => c.name.toLowerCase() === card.name.toLowerCase()
+          );
+
+          if (match) {
+            // Ensure colors is always an array (API may return string)
+            const rawColors = match.colors as unknown;
+            let colors: string[];
+            if (typeof rawColors === 'string') {
+              colors = rawColors ? rawColors.split('') : [];
+            } else if (Array.isArray(rawColors)) {
+              colors = rawColors;
+            } else {
+              colors = [];
+            }
+
+            const cardInDeck: Omit<CardInDeck, 'quantity' | 'zone' | 'tags'> = {
+              id: match.id,
+              name: match.name,
+              mana_cost: match.mana_cost,
+              cmc: match.cmc,
+              type_line: match.type_line,
+              colors,
+              rarity: match.rarity,
+              image_uri: match.image_uris?.normal || match.card_faces?.[0]?.image_uris?.normal,
+            };
+            deckStore.addCard(cardInDeck, card.quantity, card.zone, []);
+            importedCount++;
+          } else {
+            notFound.push(card.name);
+          }
+        } else {
+          notFound.push(card.name);
+        }
+      } catch {
+        notFound.push(card.name);
+      }
+    }
+
+    // Build result message
+    const messages: string[] = [];
+    if (importedCount > 0) {
+      messages.push(`Imported ${importedCount} cards`);
+    }
+    if (skipped.length > 0) {
+      messages.push(`${skipped.length} already in deck`);
+    }
+    if (notFound.length > 0) {
+      const notFoundPreview = notFound.slice(0, 3).join(', ');
+      const more = notFound.length > 3 ? ` +${notFound.length - 3} more` : '';
+      messages.push(`Not found: ${notFoundPreview}${more}`);
+    }
+
+    if (messages.length > 0) {
+      importError = messages.join('. ');
+    }
+  }
+
   // Sort piles for display
   function getSortedPileKeys(piles: Map<string, CardInDeck[]>): string[] {
     const keys = Array.from(piles.keys());
@@ -418,15 +559,45 @@
     </div>
     <div class="header-right">
       <span class="card-count">{getTotalCards()} cards</span>
-      <button 
+      <button
+        class="header-btn"
+        onclick={handleImportClick}
+        disabled={isImporting}
+        title="Import deck from .txt file"
+      >
+        {isImporting ? '...' : 'Import'}
+      </button>
+      <button
+        class="header-btn"
+        onclick={handleExport}
+        disabled={!currentDeck || currentDeck.cards.length === 0}
+        title="Export deck to .txt file"
+      >
+        Export
+      </button>
+      <button
         class="stats-toggle"
         class:active={showStats}
         onclick={() => showStats = !showStats}
       >
-        📊 Stats
+        Stats
       </button>
+      <input
+        type="file"
+        accept=".txt"
+        bind:this={fileInput}
+        onchange={handleFileSelect}
+        style="display: none;"
+      />
     </div>
   </header>
+
+  {#if importError}
+    <div class="import-notification" class:warning={importError.includes('Not found')} class:success={!importError.includes('Not found') && importError.includes('Imported')}>
+      <span>{importError}</span>
+      <button onclick={() => importError = null}>×</button>
+    </div>
+  {/if}
 
   <div class="builder-content">
     <!-- Card Search Panel -->
@@ -905,7 +1076,8 @@
     color: hsl(var(--muted-foreground));
   }
 
-  .stats-toggle {
+  .stats-toggle,
+  .header-btn {
     padding: 0.5rem 0.75rem;
     background: transparent;
     border: 1px solid hsl(var(--border));
@@ -916,12 +1088,54 @@
     transition: all var(--transition-fast);
   }
 
-  .stats-toggle:hover {
+  .stats-toggle:hover,
+  .header-btn:hover:not(:disabled) {
     background: hsl(var(--accent));
+    color: hsl(var(--foreground));
+  }
+
+  .header-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .stats-toggle.active {
     background: hsl(var(--accent));
+    color: hsl(var(--foreground));
+  }
+
+  .import-notification {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.625rem 1rem;
+    background: hsl(var(--primary) / 0.1);
+    border-bottom: 1px solid hsl(var(--primary) / 0.2);
+    color: hsl(var(--foreground));
+    font-size: 0.8125rem;
+  }
+
+  .import-notification.warning {
+    background: hsl(40 80% 50% / 0.1);
+    border-color: hsl(40 80% 50% / 0.3);
+  }
+
+  .import-notification.success {
+    background: hsl(142 70% 45% / 0.1);
+    border-color: hsl(142 70% 45% / 0.3);
+  }
+
+  .import-notification button {
+    background: transparent;
+    border: none;
+    color: hsl(var(--muted-foreground));
+    font-size: 1.25rem;
+    cursor: pointer;
+    padding: 0 0.25rem;
+    line-height: 1;
+  }
+
+  .import-notification button:hover {
     color: hsl(var(--foreground));
   }
 
