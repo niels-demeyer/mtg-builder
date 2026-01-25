@@ -12,6 +12,13 @@ import type {
   DeckFormat,
 } from "$lib/types";
 import { apiFetch, API_BASE } from "$lib/api";
+import {
+  type FixType,
+  fixSingletonDuplicates,
+  fix4ofDuplicates,
+  fixSideboardSize,
+  fixMoveCommanderToMainboard,
+} from "$lib/deckValidation";
 
 // Helper function to calculate deck statistics
 function calculateDeckStats(cards: CardInDeck[]): DeckStats {
@@ -666,6 +673,47 @@ function createDeckStore() {
     // Get deck statistics
     getDeckStats: (deck: Deck): DeckStats => {
       return calculateDeckStats(deck.cards);
+    },
+
+    // Apply a validation fix to the current deck
+    applyValidationFix: (fixType: FixType): void => {
+      update((state) => {
+        if (!state.currentDeck) return state;
+
+        let fixedCards: CardInDeck[];
+
+        switch (fixType) {
+          case "remove_duplicates_singleton":
+            fixedCards = fixSingletonDuplicates(state.currentDeck.cards);
+            break;
+          case "remove_duplicates_4of":
+            fixedCards = fix4ofDuplicates(state.currentDeck.cards);
+            break;
+          case "trim_sideboard":
+            fixedCards = fixSideboardSize(state.currentDeck.cards);
+            break;
+          case "move_to_mainboard":
+            fixedCards = fixMoveCommanderToMainboard(state.currentDeck.cards);
+            break;
+          default:
+            return state;
+        }
+
+        const updatedDeck: Deck = {
+          ...state.currentDeck,
+          cards: fixedCards,
+          updatedAt: new Date().toISOString(),
+        };
+
+        const decks = state.decks.map((d) =>
+          d.id === updatedDeck.id ? updatedDeck : d
+        );
+
+        localStorage.setItem("mtg-decks", JSON.stringify(decks));
+        debouncedSave(updatedDeck.id, fixedCards);
+
+        return { ...state, decks, currentDeck: updatedDeck };
+      });
     },
   };
 }

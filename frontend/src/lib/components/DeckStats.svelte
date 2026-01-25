@@ -1,6 +1,6 @@
 <script lang="ts">
   import { currentDeckStats, deckStore } from '../../stores/deckStore';
-  import { validateDeck } from '$lib/deckValidation';
+  import { validateDeck, type FixType } from '$lib/deckValidation';
 
   let stats = $derived($currentDeckStats);
   let currentDeck = $derived($deckStore.currentDeck);
@@ -8,6 +8,10 @@
   let errors = $derived(validationIssues.filter(i => i.severity === 'error'));
   let warnings = $derived(validationIssues.filter(i => i.severity === 'warning'));
   let showAllIssues = $state(false);
+
+  function applyFix(fixType: FixType): void {
+    deckStore.applyValidationFix(fixType);
+  }
 
   const colorNames: Record<string, string> = {
     W: 'White',
@@ -74,6 +78,15 @@
                 <span class="issue-cards">
                   {issue.cards.slice(0, 3).join(', ')}{issue.cards.length > 3 ? ` +${issue.cards.length - 3} more` : ''}
                 </span>
+              {/if}
+              {#if issue.fixType && issue.fixDescription}
+                <button
+                  class="fix-btn"
+                  onclick={() => applyFix(issue.fixType!)}
+                  title={issue.fixDescription}
+                >
+                  Fix: {issue.fixDescription}
+                </button>
               {/if}
             </div>
           </div>
@@ -546,6 +559,29 @@
     font-size: 0.75rem;
     color: hsl(var(--muted-foreground));
     font-style: italic;
+  }
+
+  .fix-btn {
+    margin-top: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    align-self: flex-start;
+  }
+
+  .fix-btn:hover {
+    background: hsl(var(--primary) / 0.9);
+    transform: translateY(-1px);
+  }
+
+  .fix-btn:active {
+    transform: translateY(0);
   }
 
   .validation-valid {
