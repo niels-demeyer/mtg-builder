@@ -10,9 +10,9 @@
 
   let recentDecks = $derived($deckStore.decks.slice(-3).reverse());
 
-  async function makeHelloWorldCall() {
+  async function makeHealthCall() {
     try {
-      const response = await fetch('http://127.0.0.1:3000/hello');
+      const response = await fetch('http://127.0.0.1:8000/api/v1/health');
       const data = await response.text();
       console.log('Response:', data);
       alert(data);
@@ -30,8 +30,8 @@
     <p>Build, manage, and test your Magic: The Gathering decks with an intuitive deck building experience.</p>
   </header>
 
-  <Button variant="primary" size="md" onclick={makeHelloWorldCall}>
-    Make Hello World Call
+  <Button variant="primary" size="md" onclick={makeHealthCall}>
+    Make Health Call
   </Button>
 
   <section class="quick-actions">
