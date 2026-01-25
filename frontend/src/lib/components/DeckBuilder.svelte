@@ -28,8 +28,10 @@
   let isSearching = $state(false);
   let searchTimeout: ReturnType<typeof setTimeout>;
   let selectedCard = $state<CardInDeck | null>(null);
-  let showStats = $state(true);
   let draggedCard = $state<CardInDeck | null>(null);
+
+  // Active tab: zone id or 'stats'
+  let activeTab = $state<CardZone | 'stats'>('mainboard');
 
   // Advanced search state
   let showAdvanced = $state(false);
@@ -89,16 +91,11 @@
   let isImporting = $state(false);
   let importError = $state<string | null>(null);
 
-  // Resizable panel widths
-  let searchPanelWidth = $state(320);
+  // Resizable panel width
   let rightPanelWidth = $state(280);
 
   const MIN_PANEL_WIDTH = 200;
   const MAX_PANEL_WIDTH = 500;
-
-  function handleSearchPanelResize(delta: number): void {
-    searchPanelWidth = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, searchPanelWidth + delta));
-  }
 
   function handleRightPanelResize(delta: number): void {
     rightPanelWidth = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, rightPanelWidth - delta));
@@ -315,6 +312,10 @@
       mana_cost: card.mana_cost,
       cmc: card.cmc,
       type_line: card.type_line,
+      oracle_text: card.oracle_text || card.card_faces?.[0]?.oracle_text,
+      flavor_text: card.flavor_text,
+      power: card.power,
+      toughness: card.toughness,
       colors,
       rarity: card.rarity,
       image_uri: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal,
@@ -363,7 +364,7 @@
 
   // Pile view grouping
   function getCardPiles(): Map<string, CardInDeck[]> {
-    const cards = getCardsInZone(selectedZone);
+    const cards = activeTab !== 'stats' ? getCardsInZone(activeTab) : [];
     const piles = new Map<string, CardInDeck[]>();
 
     cards.forEach(card => {
@@ -517,6 +518,10 @@
               mana_cost: match.mana_cost,
               cmc: match.cmc,
               type_line: match.type_line,
+              oracle_text: match.oracle_text || match.card_faces?.[0]?.oracle_text,
+              flavor_text: match.flavor_text,
+              power: match.power,
+              toughness: match.toughness,
               colors,
               rarity: match.rarity,
               image_uri: match.image_uris?.normal || match.card_faces?.[0]?.image_uris?.normal,
@@ -594,13 +599,6 @@
       >
         Export
       </button>
-      <button
-        class="stats-toggle"
-        class:active={showStats}
-        onclick={() => showStats = !showStats}
-      >
-        Stats
-      </button>
       <input
         type="file"
         accept=".txt"
@@ -620,11 +618,11 @@
 
   <div class="builder-content">
     <!-- Card Search Panel -->
-    <aside class="search-panel" style="width: {searchPanelWidth}px">
+    <aside class="search-panel">
       <div class="panel-header">
         <h2>Add Cards</h2>
       </div>
-      
+
       <div class="search-input-wrapper">
         <input
           type="text"
@@ -799,8 +797,6 @@
       </div>
     </aside>
 
-    <ResizeHandle direction="horizontal" onResize={handleSearchPanelResize} />
-
     <!-- Main Deck View -->
     <main class="deck-main">
       <!-- Zone Tabs -->
@@ -808,9 +804,9 @@
         {#each zones as zone}
           <button
             class="zone-tab"
-            class:active={selectedZone === zone.id}
+            class:active={activeTab === zone.id}
             class:has-cards={getZoneCount(zone.id) > 0}
-            onclick={() => setSelectedZone(zone.id)}
+            onclick={() => activeTab = zone.id}
             ondragover={handleDragOver}
             ondrop={(e) => handleDrop(e, zone.id)}
           >
@@ -819,179 +815,192 @@
             <span class="zone-count">{getZoneCount(zone.id)}</span>
           </button>
         {/each}
+        <button
+          class="zone-tab stats-tab"
+          class:active={activeTab === 'stats'}
+          onclick={() => activeTab = 'stats'}
+        >
+          <span class="zone-icon">📊</span>
+          <span class="zone-label">Stats</span>
+        </button>
       </div>
 
-      <!-- Display Mode Controls -->
-      <div class="view-controls">
-        <div class="display-modes">
-          {#each displayModes as mode}
-            <button
-              class="mode-btn"
-              class:active={displayMode === mode.id}
-              onclick={() => setDisplayMode(mode.id)}
-              title={mode.label}
-            >
-              {mode.icon}
-            </button>
-          {/each}
+      <!-- Stats View -->
+      {#if activeTab === 'stats'}
+        <div class="stats-view">
+          <DeckStats />
         </div>
-        
-        {#if displayMode === 'pile'}
-          <div class="pile-sort">
-            <span class="label">Sort by:</span>
-            {#each pileSortOptions as option}
+      {/if}
+
+      <!-- Zone Views -->
+      {#if activeTab !== 'stats'}
+        <!-- Display Mode Controls -->
+        <div class="view-controls">
+          <div class="display-modes">
+            {#each displayModes as mode}
               <button
-                class="sort-btn"
-                class:active={pileSortBy === option.id}
-                onclick={() => setPileSortBy(option.id)}
+                class="mode-btn"
+                class:active={displayMode === mode.id}
+                onclick={() => setDisplayMode(mode.id)}
+                title={mode.label}
               >
-                {option.label}
+                {mode.icon}
               </button>
             {/each}
           </div>
-        {/if}
-      </div>
 
-      <!-- Card List View -->
-      {#if displayMode === 'list'}
-        <div class="card-list">
-          {#each getCardsInZone(selectedZone) as card}
-            <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-            <div 
-              class="list-card"
-              class:selected={selectedCard?.id === card.id}
-              draggable="true"
-              role="listitem"
-              ondragstart={(e) => handleDragStart(e, card)}
-              ondragend={handleDragEnd}
-              onclick={() => selectCard(card)}
-            >
-              <div class="card-main">
-                <span class="quantity">{card.quantity}x</span>
-                <span class="name">{card.name}</span>
-                {#if card.tags.length > 0}
-                  <div class="card-tags">
-                    {#each card.tags.slice(0, 2) as tag}
-                      <span class="mini-tag">{tag}</span>
-                    {/each}
-                    {#if card.tags.length > 2}
-                      <span class="mini-tag more">+{card.tags.length - 2}</span>
-                    {/if}
-                  </div>
-                {/if}
-              </div>
-              <div class="card-meta">
-                <span class="mana">{card.mana_cost || ''}</span>
-                <span class="type">{card.type_line.split('—')[0].trim()}</span>
-              </div>
-              <div class="card-controls">
-                <button onclick={(e) => { e.stopPropagation(); updateQuantity(card.id, card.quantity - 1, card.zone); }}>−</button>
-                <button onclick={(e) => { e.stopPropagation(); updateQuantity(card.id, card.quantity + 1, card.zone); }}>+</button>
-                <button class="remove" onclick={(e) => { e.stopPropagation(); removeCard(card.id, card.zone); }}>✕</button>
-              </div>
-            </div>
-          {/each}
-          {#if getCardsInZone(selectedZone).length === 0}
-            <div class="empty-zone">
-              <p>No cards in {zones.find(z => z.id === selectedZone)?.label}</p>
-              <p class="hint">Search and add cards, or drag cards here</p>
+          {#if displayMode === 'pile'}
+            <div class="pile-sort">
+              <span class="label">Sort by:</span>
+              {#each pileSortOptions as option}
+                <button
+                  class="sort-btn"
+                  class:active={pileSortBy === option.id}
+                  onclick={() => setPileSortBy(option.id)}
+                >
+                  {option.label}
+                </button>
+              {/each}
             </div>
           {/if}
         </div>
-      {/if}
 
-      <!-- Grid View -->
-      {#if displayMode === 'grid'}
-        <div class="card-grid">
-          {#each getCardsInZone(selectedZone) as card}
-            <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-            <div 
-              class="grid-card"
-              class:selected={selectedCard?.id === card.id}
-              draggable="true"
-              role="listitem"
-              ondragstart={(e) => handleDragStart(e, card)}
-              ondragend={handleDragEnd}
-              onclick={() => selectCard(card)}
-            >
-              {#if card.image_uri}
-                <img src={card.image_uri} alt={card.name} loading="lazy" />
-              {:else}
-                <div class="no-image">
-                  <span>{card.name}</span>
+        <!-- Card List View -->
+        {#if displayMode === 'list'}
+          <div class="card-list">
+            {#each getCardsInZone(activeTab) as card}
+              <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+              <div
+                class="list-card"
+                class:selected={selectedCard?.id === card.id}
+                draggable="true"
+                role="listitem"
+                ondragstart={(e) => handleDragStart(e, card)}
+                ondragend={handleDragEnd}
+                onclick={() => selectCard(card)}
+              >
+                <div class="card-main">
+                  <span class="quantity">{card.quantity}x</span>
+                  <span class="name">{card.name}</span>
+                  {#if card.tags.length > 0}
+                    <div class="card-tags">
+                      {#each card.tags.slice(0, 2) as tag}
+                        <span class="mini-tag">{tag}</span>
+                      {/each}
+                      {#if card.tags.length > 2}
+                        <span class="mini-tag more">+{card.tags.length - 2}</span>
+                      {/if}
+                    </div>
+                  {/if}
                 </div>
-              {/if}
-              <div class="grid-card-overlay">
-                <span class="quantity-badge">{card.quantity}x</span>
-                <div class="grid-controls">
+                <div class="card-meta">
+                  <span class="mana">{card.mana_cost || ''}</span>
+                  <span class="type">{card.type_line.split('—')[0].trim()}</span>
+                </div>
+                <div class="card-controls">
                   <button onclick={(e) => { e.stopPropagation(); updateQuantity(card.id, card.quantity - 1, card.zone); }}>−</button>
                   <button onclick={(e) => { e.stopPropagation(); updateQuantity(card.id, card.quantity + 1, card.zone); }}>+</button>
+                  <button class="remove" onclick={(e) => { e.stopPropagation(); removeCard(card.id, card.zone); }}>✕</button>
                 </div>
               </div>
-            </div>
-          {/each}
-          {#if getCardsInZone(selectedZone).length === 0}
-            <div class="empty-zone grid-empty">
-              <p>No cards in {zones.find(z => z.id === selectedZone)?.label}</p>
-            </div>
-          {/if}
-        </div>
-      {/if}
+            {/each}
+            {#if getCardsInZone(activeTab).length === 0}
+              <div class="empty-zone">
+                <p>No cards in {zones.find(z => z.id === activeTab)?.label}</p>
+                <p class="hint">Search and add cards, or drag cards here</p>
+              </div>
+            {/if}
+          </div>
+        {/if}
 
-      <!-- Pile View -->
-      {#if displayMode === 'pile'}
-        <div class="card-piles">
-          {#each getSortedPileKeys(getCardPiles()) as pileKey}
-            <div class="pile-column">
-              <div class="pile-header">
-                <span class="pile-title">{pileKey}</span>
-                <span class="pile-count">{getCardPiles().get(pileKey)?.reduce((s, c) => s + c.quantity, 0)}</span>
-              </div>
-              <div class="pile-stack">
-                {#each getCardPiles().get(pileKey) || [] as card, i}
-                  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-                  <div 
-                    class="pile-card"
-                    class:selected={selectedCard?.id === card.id}
-                    style="--stack-offset: {i * 28}px"
-                    draggable="true"
-                    role="listitem"
-                    ondragstart={(e) => handleDragStart(e, card)}
-                    ondragend={handleDragEnd}
-                    onclick={() => selectCard(card)}
-                  >
-                    {#if card.image_uri}
-                      <img src={card.image_uri} alt={card.name} loading="lazy" />
-                    {:else}
-                      <div class="pile-card-text">
-                        <span class="name">{card.name}</span>
-                      </div>
-                    {/if}
-                    <span class="pile-quantity">{card.quantity}x</span>
+        <!-- Grid View -->
+        {#if displayMode === 'grid'}
+          <div class="card-grid">
+            {#each getCardsInZone(activeTab) as card}
+              <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+              <div
+                class="grid-card"
+                class:selected={selectedCard?.id === card.id}
+                draggable="true"
+                role="listitem"
+                ondragstart={(e) => handleDragStart(e, card)}
+                ondragend={handleDragEnd}
+                onclick={() => selectCard(card)}
+              >
+                {#if card.image_uri}
+                  <img src={card.image_uri} alt={card.name} loading="lazy" />
+                {:else}
+                  <div class="no-image">
+                    <span>{card.name}</span>
                   </div>
-                {/each}
+                {/if}
+                <div class="grid-card-overlay">
+                  <span class="quantity-badge">{card.quantity}x</span>
+                  <div class="grid-controls">
+                    <button onclick={(e) => { e.stopPropagation(); updateQuantity(card.id, card.quantity - 1, card.zone); }}>−</button>
+                    <button onclick={(e) => { e.stopPropagation(); updateQuantity(card.id, card.quantity + 1, card.zone); }}>+</button>
+                  </div>
+                </div>
               </div>
-            </div>
-          {/each}
-          {#if getCardsInZone(selectedZone).length === 0}
-            <div class="empty-zone pile-empty">
-              <p>No cards in {zones.find(z => z.id === selectedZone)?.label}</p>
-            </div>
-          {/if}
-        </div>
+            {/each}
+            {#if getCardsInZone(activeTab).length === 0}
+              <div class="empty-zone grid-empty">
+                <p>No cards in {zones.find(z => z.id === activeTab)?.label}</p>
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Pile View -->
+        {#if displayMode === 'pile'}
+          <div class="card-piles">
+            {#each getSortedPileKeys(getCardPiles()) as pileKey}
+              <div class="pile-column">
+                <div class="pile-header">
+                  <span class="pile-title">{pileKey}</span>
+                  <span class="pile-count">{getCardPiles().get(pileKey)?.reduce((s, c) => s + c.quantity, 0)}</span>
+                </div>
+                <div class="pile-stack">
+                  {#each getCardPiles().get(pileKey) || [] as card, i}
+                    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+                    <div
+                      class="pile-card"
+                      class:selected={selectedCard?.id === card.id}
+                      style="--stack-offset: {i * 28}px"
+                      draggable="true"
+                      role="listitem"
+                      ondragstart={(e) => handleDragStart(e, card)}
+                      ondragend={handleDragEnd}
+                      onclick={() => selectCard(card)}
+                    >
+                      {#if card.image_uri}
+                        <img src={card.image_uri} alt={card.name} loading="lazy" />
+                      {:else}
+                        <div class="pile-card-text">
+                          <span class="name">{card.name}</span>
+                        </div>
+                      {/if}
+                      <span class="pile-quantity">{card.quantity}x</span>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/each}
+            {#if getCardsInZone(activeTab).length === 0}
+              <div class="empty-zone pile-empty">
+                <p>No cards in {zones.find(z => z.id === activeTab)?.label}</p>
+              </div>
+            {/if}
+          </div>
+        {/if}
       {/if}
     </main>
 
-    <!-- Right Panel - Preview & Stats -->
-    {#if showStats || selectedCard}
+    <!-- Right Panel - Card Preview -->
+    {#if selectedCard}
       <ResizeHandle direction="horizontal" onResize={handleRightPanelResize} />
       <aside class="right-panel" style="width: {rightPanelWidth}px">
-        {#if selectedCard}
-          <CardPreview card={selectedCard} onClose={() => selectedCard = null} />
-        {/if}
-        {#if showStats}
-          <DeckStats />
-        {/if}
+        <CardPreview card={selectedCard} onClose={() => selectedCard = null} />
       </aside>
     {/if}
   </div>
@@ -1018,6 +1027,23 @@
           <span class="hover-mana">{hoveredCard.mana_cost || 'No cost'}</span>
           <span class="hover-rarity rarity-{hoveredCard.rarity}">{hoveredCard.rarity}</span>
         </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Mobile Card Preview Modal -->
+  {#if selectedCard}
+    <div
+      class="mobile-card-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Card preview"
+      onclick={() => selectedCard = null}
+      onkeydown={(e) => e.key === 'Escape' && (selectedCard = null)}
+      tabindex="-1"
+    >
+      <div class="mobile-card-modal" role="document">
+        <CardPreview card={selectedCard} onClose={() => selectedCard = null} isModal={true} />
       </div>
     </div>
   {/if}
@@ -1095,7 +1121,6 @@
     color: hsl(var(--muted-foreground));
   }
 
-  .stats-toggle,
   .header-btn {
     padding: 0.5rem 0.75rem;
     background: transparent;
@@ -1107,7 +1132,6 @@
     transition: all var(--transition-fast);
   }
 
-  .stats-toggle:hover,
   .header-btn:hover:not(:disabled) {
     background: hsl(var(--accent));
     color: hsl(var(--foreground));
@@ -1116,11 +1140,6 @@
   .header-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-
-  .stats-toggle.active {
-    background: hsl(var(--accent));
-    color: hsl(var(--foreground));
   }
 
   .import-notification {
@@ -1167,8 +1186,9 @@
 
   /* Search Panel */
   .search-panel {
+    width: 320px;
     min-width: 200px;
-    max-width: 500px;
+    max-width: 400px;
     background: hsl(var(--card));
     border-right: 1px solid hsl(var(--border));
     display: flex;
@@ -1196,6 +1216,7 @@
   .search-input-wrapper input {
     width: 100%;
     padding: 0.625rem 0.875rem;
+    padding-right: 4rem;
     background: hsl(var(--secondary));
     border: 1px solid hsl(var(--border));
     border-radius: var(--radius-md);
@@ -1269,10 +1290,60 @@
     font-size: 0.8125rem;
   }
 
+  /* Advanced Filters */
+  .advanced-filters {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid hsl(var(--border));
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .filter-group label,
+  .filter-label {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .filter-group input[type="text"],
+  .filter-group input[type="number"] {
+    padding: 0.5rem 0.625rem;
+    background: hsl(var(--secondary));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-sm);
+    color: hsl(var(--foreground));
+    font-size: 0.8125rem;
+  }
+
+  .filter-group input:focus {
+    outline: none;
+    border-color: hsl(var(--ring));
+  }
+
+  /* Search Results */
   .search-results {
     flex: 1;
     overflow-y: auto;
     padding: 0.5rem;
+  }
+
+  .results-header {
+    padding: 0.5rem;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+
+  .results-count {
+    font-size: 0.75rem;
+    color: hsl(var(--muted-foreground));
   }
 
   .search-card {
@@ -1360,43 +1431,34 @@
     padding: 2rem 1rem;
   }
 
-  /* Advanced Filters */
-  .advanced-filters {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid hsl(var(--border));
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-  }
-
-  .filter-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .filter-group label,
-  .filter-label {
-    font-size: 0.6875rem;
-    font-weight: 500;
-    color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  .filter-group input[type="text"],
-  .filter-group input[type="number"] {
-    padding: 0.5rem 0.625rem;
+  .load-more-btn {
+    width: 100%;
+    padding: 0.75rem;
+    margin-top: 0.5rem;
     background: hsl(var(--secondary));
     border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     color: hsl(var(--foreground));
     font-size: 0.8125rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
   }
 
-  .filter-group input:focus {
-    outline: none;
+  .load-more-btn:hover:not(:disabled) {
+    background: hsl(var(--accent));
     border-color: hsl(var(--ring));
+  }
+
+  .load-more-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Stats View */
+  .stats-view {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
   }
 
   /* Color Buttons */
@@ -1546,41 +1608,6 @@
     color: hsl(var(--destructive));
   }
 
-  /* Results Header */
-  .results-header {
-    padding: 0.5rem;
-    border-bottom: 1px solid hsl(var(--border));
-  }
-
-  .results-count {
-    font-size: 0.75rem;
-    color: hsl(var(--muted-foreground));
-  }
-
-  /* Load More Button */
-  .load-more-btn {
-    width: 100%;
-    padding: 0.75rem;
-    margin-top: 0.5rem;
-    background: hsl(var(--secondary));
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-md);
-    color: hsl(var(--foreground));
-    font-size: 0.8125rem;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-  }
-
-  .load-more-btn:hover:not(:disabled) {
-    background: hsl(var(--accent));
-    border-color: hsl(var(--ring));
-  }
-
-  .load-more-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   /* Main Deck Area */
   .deck-main {
     flex: 1;
@@ -1628,6 +1655,19 @@
   .zone-tab.has-cards .zone-count {
     background: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
+  }
+
+  .zone-tab.stats-tab {
+    margin-left: auto;
+    border-left: 1px solid hsl(var(--border));
+    padding-left: 1rem;
+  }
+
+  .zone-tab.stats-tab.active {
+    background: hsl(var(--primary) / 0.1);
+    color: hsl(var(--primary));
+    border-color: hsl(var(--primary) / 0.3);
+    border-left-color: hsl(var(--border));
   }
 
   .zone-icon {
@@ -2056,11 +2096,11 @@
     max-width: 500px;
     background: hsl(var(--card));
     border-left: 1px solid hsl(var(--border));
-    overflow-y: auto;
+    overflow: hidden;
     padding: 1rem;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.75rem;
     flex-shrink: 0;
   }
 
@@ -2172,8 +2212,8 @@
     }
 
     .search-panel {
+      width: 280px;
       min-width: 180px;
-      max-width: 350px;
     }
 
     .hover-preview {
@@ -2217,8 +2257,8 @@
     }
 
     .search-panel {
+      width: 240px;
       min-width: 160px;
-      max-width: 280px;
     }
 
     .card-grid {
@@ -2242,16 +2282,11 @@
     }
 
     .search-panel {
-      width: 100% !important;
+      width: 100%;
       max-width: none;
-      min-width: auto;
-      max-height: 40vh;
+      max-height: 35vh;
       border-right: none;
       border-bottom: 1px solid hsl(var(--border));
-    }
-
-    .deck-main {
-      min-height: 0;
     }
 
     .zone-tabs {
@@ -2261,6 +2296,11 @@
     .zone-tab {
       padding: 0.375rem 0.5rem;
       font-size: 0.75rem;
+    }
+
+    .zone-tab.stats-tab {
+      padding-left: 0.625rem;
+      margin-left: 0.25rem;
     }
 
     .zone-label {
@@ -2290,6 +2330,68 @@
     .header-btn {
       padding: 0.375rem 0.5rem;
       font-size: 0.75rem;
+    }
+
+    .advanced-filters {
+      padding: 0.5rem;
+      gap: 0.5rem;
+    }
+
+    .add-to-zone .label {
+      display: none;
+    }
+  }
+
+  /* Mobile Card Preview Modal */
+  .mobile-card-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: hsl(0 0% 0% / 0.7);
+    z-index: 1000;
+    padding: 1rem;
+    overflow-y: auto;
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  .mobile-card-modal {
+    max-width: 400px;
+    margin: 0 auto;
+    animation: slideUp 0.25s ease-out;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Show mobile modal when right panel is hidden */
+  @media (max-width: 900px) {
+    .mobile-card-modal-overlay {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 2rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .mobile-card-modal-overlay {
+      padding: 0;
+      padding-top: 0;
+      align-items: stretch;
+    }
+
+    .mobile-card-modal {
+      max-width: none;
+      width: 100%;
+      min-height: 100vh;
     }
   }
 </style>

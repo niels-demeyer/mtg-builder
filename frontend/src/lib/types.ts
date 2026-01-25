@@ -6,6 +6,9 @@ export interface ScryfallCard {
   cmc: number;
   type_line: string;
   oracle_text?: string;
+  flavor_text?: string;
+  power?: string;
+  toughness?: string;
   colors?: string[];
   color_identity: string[];
   rarity: string;
@@ -101,6 +104,10 @@ export interface CardInDeck {
   mana_cost?: string;
   cmc: number;
   type_line: string;
+  oracle_text?: string;
+  flavor_text?: string;
+  power?: string;
+  toughness?: string;
   colors?: string[];
   rarity: string;
   image_uri?: string;

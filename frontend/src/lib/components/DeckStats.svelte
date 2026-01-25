@@ -210,6 +210,9 @@
     border-radius: var(--radius-lg);
     padding: 1rem;
     border: 1px solid hsl(var(--border));
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .stats-grid {
