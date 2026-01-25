@@ -4,13 +4,12 @@
 import os
 import sys
 from pathlib import Path
+import psycopg2
+from dotenv import load_dotenv
 
 # Add backend to path so we can import from there
 backend_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_dir))
-
-import psycopg2
-from dotenv import load_dotenv
 
 load_dotenv(backend_dir / ".env")
 
@@ -30,10 +29,10 @@ def get_connection():
     return psycopg2.connect(db_url)
 
 
-def get_migrations():
+def get_migrations() -> list[tuple[str, str]]:
     """Load migrations from .sql files in the migrations directory."""
     sql_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
-    migrations = []
+    migrations: list[tuple[str, str]] = []
     for sql_file in sql_files:
         migrations.append((sql_file.name, sql_file.read_text()))
     return migrations
@@ -45,7 +44,7 @@ def run_migrations():
     conn = get_connection()
     cursor = conn.cursor()
 
-    migrations = get_migrations()
+    migrations : list[tuple[str, str]] = get_migrations()
     if not migrations:
         print("No .sql migration files found.")
         return
