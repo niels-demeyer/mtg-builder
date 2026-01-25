@@ -217,18 +217,23 @@
     padding: 1rem;
     display: flex;
     justify-content: center;
+    flex-shrink: 0;
   }
 
   .preview-image img {
-    max-width: 100%;
+    width: 100%;
+    max-width: 250px;
     height: auto;
+    aspect-ratio: 63/88;
+    object-fit: contain;
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-md);
   }
 
   .no-image {
-    width: 200px;
-    height: 280px;
+    width: 100%;
+    max-width: 200px;
+    aspect-ratio: 63/88;
     background: hsl(var(--secondary));
     border-radius: var(--radius-md);
     display: flex;

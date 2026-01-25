@@ -268,10 +268,29 @@
   function handleCardHover(card: ScryfallCard, event: MouseEvent): void {
     hoveredCard = card;
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    hoverPosition = {
-      x: rect.right + 10,
-      y: rect.top
-    };
+    const previewWidth = 420;
+    const previewHeight = 300;
+
+    // Position to the right of the card, but flip to left if it would go off-screen
+    let x = rect.right + 10;
+    let y = rect.top;
+
+    // Check if preview would go off right edge
+    if (x + previewWidth > window.innerWidth) {
+      x = rect.left - previewWidth - 10;
+    }
+
+    // Check if preview would go off bottom edge
+    if (y + previewHeight > window.innerHeight) {
+      y = window.innerHeight - previewHeight - 10;
+    }
+
+    // Ensure it doesn't go off top
+    if (y < 10) {
+      y = 10;
+    }
+
+    hoverPosition = { x, y };
   }
 
   function handleCardHoverEnd(): void {
@@ -1142,6 +1161,7 @@
   .builder-content {
     display: flex;
     flex: 1;
+    min-height: 0;
     overflow: hidden;
   }
 
@@ -1278,8 +1298,10 @@
   .search-card img {
     width: 40px;
     height: 56px;
-    object-fit: cover;
+    object-fit: contain;
     border-radius: var(--radius-sm);
+    background: hsl(var(--background));
+    flex-shrink: 0;
   }
 
   .search-card .card-info {
@@ -1562,6 +1584,7 @@
   /* Main Deck Area */
   .deck-main {
     flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1857,7 +1880,8 @@
   .grid-card img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    background: hsl(var(--secondary));
   }
 
   .grid-card .no-image {
@@ -1990,7 +2014,8 @@
   .pile-card img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    background: hsl(var(--secondary));
   }
 
   .pile-card-text {
@@ -2051,6 +2076,8 @@
     padding: 0.75rem;
     box-shadow: var(--shadow-lg);
     max-width: 420px;
+    max-height: calc(100vh - 20px);
+    overflow: hidden;
     pointer-events: none;
     animation: fadeIn 0.15s ease-out;
   }
@@ -2136,4 +2163,133 @@
   .hover-rarity.rarity-uncommon { background: #607d8b; color: #fff; }
   .hover-rarity.rarity-rare { background: #b8860b; color: #fff; }
   .hover-rarity.rarity-mythic { background: #d84315; color: #fff; }
+
+  /* Responsive Styles */
+  @media (max-width: 1200px) {
+    .right-panel {
+      min-width: 180px;
+      max-width: 300px;
+    }
+
+    .search-panel {
+      min-width: 180px;
+      max-width: 350px;
+    }
+
+    .hover-preview {
+      max-width: 320px;
+    }
+
+    .hover-preview-image img {
+      width: 140px;
+    }
+
+    .hover-preview-details {
+      max-width: 150px;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .builder-header {
+      padding: 0.5rem 1rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .header-left {
+      gap: 0.5rem;
+    }
+
+    .header-right {
+      gap: 0.5rem;
+    }
+
+    .deck-info h1 {
+      font-size: 1rem;
+    }
+
+    .card-count {
+      display: none;
+    }
+
+    .right-panel {
+      display: none;
+    }
+
+    .search-panel {
+      min-width: 160px;
+      max-width: 280px;
+    }
+
+    .card-grid {
+      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+      gap: 0.5rem;
+      padding: 0.75rem;
+    }
+
+    .pile-column {
+      width: 110px;
+    }
+
+    .hover-preview {
+      display: none;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .builder-content {
+      flex-direction: column;
+    }
+
+    .search-panel {
+      width: 100% !important;
+      max-width: none;
+      min-width: auto;
+      max-height: 40vh;
+      border-right: none;
+      border-bottom: 1px solid hsl(var(--border));
+    }
+
+    .deck-main {
+      min-height: 0;
+    }
+
+    .zone-tabs {
+      padding: 0.375rem 0.5rem;
+    }
+
+    .zone-tab {
+      padding: 0.375rem 0.5rem;
+      font-size: 0.75rem;
+    }
+
+    .zone-label {
+      display: none;
+    }
+
+    .view-controls {
+      padding: 0.375rem 0.5rem;
+    }
+
+    .card-grid {
+      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    }
+
+    .card-list {
+      padding: 0.5rem;
+    }
+
+    .list-card {
+      padding: 0.5rem;
+    }
+
+    .list-card .card-meta {
+      display: none;
+    }
+
+    .header-btn {
+      padding: 0.375rem 0.5rem;
+      font-size: 0.75rem;
+    }
+  }
 </style>
