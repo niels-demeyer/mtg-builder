@@ -240,6 +240,16 @@ export interface GameCard {
   isCommander?: boolean;
 }
 
+// Mana pool tracking
+export interface ManaPool {
+  W: number;  // White
+  U: number;  // Blue
+  B: number;  // Black
+  R: number;  // Red
+  G: number;  // Green
+  C: number;  // Colorless
+}
+
 // Player state in a game
 export interface PlayerState {
   id: string;
@@ -247,6 +257,7 @@ export interface PlayerState {
   life: number;
   poison: number;
   commanderDamage: Record<string, number>; // Commander ID -> damage taken
+  manaPool: ManaPool;
   library: GameCard[];
   hand: GameCard[];
   battlefield: GameCard[];
