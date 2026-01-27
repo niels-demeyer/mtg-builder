@@ -343,10 +343,6 @@
     gameStore.clearManaPool();
   }
 
-  function handleAddMana(color: ManaColor) {
-    gameStore.addMana(color);
-  }
-
   function handleRemoveMana(color: ManaColor) {
     gameStore.removeMana(color);
   }
