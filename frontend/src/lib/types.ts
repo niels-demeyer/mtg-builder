@@ -204,3 +204,130 @@ export interface DragItem {
   sourceZone: CardZone;
   index: number;
 }
+
+// ============================================
+// Game Types for Opening Hands / Gameplay
+// ============================================
+
+// Game zones where cards can exist during gameplay
+export type GameZone =
+  | "library"
+  | "hand"
+  | "battlefield"
+  | "graveyard"
+  | "exile"
+  | "command";
+
+// A card instance in the game (unique per card, even if same card name)
+export interface GameCard {
+  instanceId: string;       // Unique ID for this instance
+  cardId: string;           // Original card ID from deck
+  name: string;
+  mana_cost?: string;
+  cmc: number;
+  type_line: string;
+  oracle_text?: string;
+  power?: string;
+  toughness?: string;
+  colors?: string[];
+  rarity: string;
+  image_uri?: string;
+  zone: GameZone;
+  isTapped: boolean;
+  counters: Record<string, number>;
+  attachedTo?: string;      // instanceId of card this is attached to
+  faceDown: boolean;
+  isCommander?: boolean;
+}
+
+// Player state in a game
+export interface PlayerState {
+  id: string;
+  name: string;
+  life: number;
+  poison: number;
+  commanderDamage: Record<string, number>; // Commander ID -> damage taken
+  library: GameCard[];
+  hand: GameCard[];
+  battlefield: GameCard[];
+  graveyard: GameCard[];
+  exile: GameCard[];
+  command: GameCard[];      // Command zone for commanders
+}
+
+// Game state for managing a game session
+export interface GameState {
+  id: string;
+  deckId: string;
+  deckName: string;
+  format: DeckFormat;
+  player: PlayerState;
+  turnNumber: number;
+  phase: GamePhase;
+  history: GameAction[];
+  mulliganCount: number;
+  started: boolean;
+}
+
+// Game phases
+export type GamePhase =
+  | "untap"
+  | "upkeep"
+  | "draw"
+  | "main1"
+  | "combat_begin"
+  | "combat_attackers"
+  | "combat_blockers"
+  | "combat_damage"
+  | "combat_end"
+  | "main2"
+  | "end"
+  | "cleanup";
+
+// Actions that can be recorded in game history
+export interface GameAction {
+  id: string;
+  timestamp: number;
+  type: GameActionType;
+  cardInstanceId?: string;
+  fromZone?: GameZone;
+  toZone?: GameZone;
+  details?: string;
+}
+
+export type GameActionType =
+  | "draw"
+  | "play"
+  | "discard"
+  | "tap"
+  | "untap"
+  | "exile"
+  | "destroy"
+  | "return"
+  | "shuffle"
+  | "mulligan"
+  | "scry"
+  | "mill"
+  | "life_change"
+  | "counter_add"
+  | "counter_remove";
+
+// Opening hand evaluation result
+export interface OpeningHandEvaluation {
+  keepScore: number;        // 0-100 score
+  landCount: number;
+  nonLandCount: number;
+  averageCmc: number;
+  hasEarlyPlay: boolean;    // Has 1-2 cmc playable
+  hasMidGame: boolean;      // Has 3-4 cmc playable
+  colorCoverage: string[];  // Colors represented in hand
+  suggestions: string[];    // AI suggestions
+}
+
+// Game store state
+export interface GameStoreState {
+  game: GameState | null;
+  selectedCard: GameCard | null;
+  isLoading: boolean;
+  error: string | null;
+}
