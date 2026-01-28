@@ -5,7 +5,7 @@ from typing import Any
 from dataclasses import asdict
 from sqlalchemy import text as sql_text
 
-from app.routes.dbmodels import DbCard
+from app.models.dbmodels import DbCard
 
 router = APIRouter()
 
