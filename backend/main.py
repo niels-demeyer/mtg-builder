@@ -1,3 +1,14 @@
+"""
+MTG Builder API
+
+FastAPI application entry point.
+Uses MVC architecture:
+- Models: Database models (app/models/)
+- Views: Pydantic schemas for API request/response (app/views/)
+- Controllers: Business logic (app/controllers/)
+- Routers: Route definitions (app/routers/)
+"""
+
 import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -6,16 +17,12 @@ import asyncpg
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
-# Import and include routers
-from app.routes.health import router as health_router
-from app.routes.name import router as name_router
-from app.routes.search import router as search_router
-from app.routes.auth import router as auth_router
-from app.routes.decks import router as decks_router
+# Import routers
+from app.routers import auth_router, deck_router, card_router, health_router
 
 load_dotenv()
-
 
 # Get raw DSN from env
 _raw_db_url = os.getenv("DATABASE_URL", "")
@@ -37,15 +44,14 @@ else:
     sqlalchemy_dsn = _raw_db_url
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Application lifespan context manager for database setup/teardown."""
     # Startup: create database connection pool
     pool = await asyncpg.create_pool(asyncpg_dsn)  # type: ignore[attr-defined]
     app.state.pool = pool
 
     # Setup SQLAlchemy async sessionmaker
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
     engine = create_async_engine(sqlalchemy_dsn, echo=False)
     app.state.async_session = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -55,6 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await pool.close()  # type: ignore[attr-defined]
     await engine.dispose()
 
+
 app = FastAPI(
     title="MTG Builder API",
     description="API for building and managing Magic: The Gathering decks",
@@ -62,34 +69,25 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS middleware configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:1420", "http://127.0.0.1:1420"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:1420",
+        "http://127.0.0.1:1420",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(health_router,
-                   prefix="/api/v1",
-                   tags=["Health"])
-
-
-app.include_router(name_router,
-                   prefix="/api/v1",
-                   tags=["Name"])
-
-app.include_router(search_router,
-                   prefix="/api/v1",
-                   tags=["Search"])
-
-app.include_router(auth_router,
-                   prefix="/api/v1",
-                   tags=["Auth"])
-
-app.include_router(decks_router,
-                   prefix="/api/v1",
-                   tags=["Decks"])
+# Register routers
+app.include_router(health_router, prefix="/api/v1", tags=["Health"])
+app.include_router(auth_router, prefix="/api/v1", tags=["Auth"])
+app.include_router(deck_router, prefix="/api/v1", tags=["Decks"])
+app.include_router(card_router, prefix="/api/v1", tags=["Cards"])
 
 
 if __name__ == "__main__":

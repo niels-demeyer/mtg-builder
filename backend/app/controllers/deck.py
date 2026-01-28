@@ -1,57 +1,61 @@
-from fastapi import APIRouter, HTTPException, status, Request, Depends, Path
-from pydantic import BaseModel, Field
-from sqlalchemy import text
-from typing import Optional, List, Any
+"""
+Deck Controller
+
+Business logic for deck management operations.
+"""
+
 import json
+from typing import List, Any
 
-from app.models.user import verify_jwt_token, TokenData
+from fastapi import HTTPException, status
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter()
-
-
-class CardInDeck(BaseModel):
-    id: str
-    name: str
-    mana_cost: Optional[str] = None
-    cmc: float = 0
-    type_line: str = ""
-    colors: Optional[List[str]] = None
-    rarity: str = "common"
-    image_uri: Optional[str] = None
-    quantity: int = 1
-    zone: str = "mainboard"
-    tags: List[str] = []
-    isCommander: Optional[bool] = False
+from app.views.user import TokenData
+from app.views.deck import CardInDeck, DeckCreate, DeckUpdate, DeckResponse
 
 
-class DeckCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    format: str = "Standard"
-    description: Optional[str] = None
-    cards: List[CardInDeck] = []
+class DeckController:
+    """Controller for deck management operations."""
 
+    @staticmethod
+    def _parse_card_data(card_row: tuple) -> CardInDeck:
+        """Parse a card row from database into CardInDeck view."""
+        card_data = card_row[5] if card_row[5] else {}
+        if isinstance(card_data, str):
+            card_data = json.loads(card_data)
 
-class DeckUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    format: Optional[str] = None
-    description: Optional[str] = None
-    cards: Optional[List[CardInDeck]] = None
+        return CardInDeck(
+            id=card_row[0],
+            name=card_data.get("name", "Unknown"),
+            mana_cost=card_data.get("mana_cost"),
+            cmc=card_data.get("cmc", 0),
+            type_line=card_data.get("type_line", ""),
+            colors=card_data.get("colors"),
+            rarity=card_data.get("rarity", "common"),
+            image_uri=card_data.get("image_uri"),
+            quantity=card_row[1],
+            zone=card_row[2] or "mainboard",
+            tags=card_row[3] or [],
+            isCommander=card_row[4] or False,
+        )
 
+    @staticmethod
+    def _card_to_json(card: CardInDeck) -> str:
+        """Convert CardInDeck to JSON for storage."""
+        return json.dumps({
+            "name": card.name,
+            "mana_cost": card.mana_cost,
+            "cmc": card.cmc,
+            "type_line": card.type_line,
+            "colors": card.colors,
+            "rarity": card.rarity,
+            "image_uri": card.image_uri,
+        })
 
-class DeckResponse(BaseModel):
-    id: str
-    name: str
-    format: str = "Standard"
-    description: Optional[str] = None
-    cards: List[CardInDeck] = []
-    createdAt: Optional[str] = None
-    updatedAt: Optional[str] = None
-
-
-@router.get("/decks", response_model=List[DeckResponse])
-async def list_decks(request: Request, token_data: TokenData = Depends(verify_jwt_token)):
-    """List all decks for the current user with their cards."""
-    async with request.app.state.async_session() as session:
+    @staticmethod
+    async def list_decks(session: AsyncSession, token_data: TokenData) -> List[DeckResponse]:
+        """List all decks for the current user with their cards."""
         # Get all decks
         result = await session.execute(
             text("""
@@ -79,26 +83,7 @@ async def list_decks(request: Request, token_data: TokenData = Depends(verify_jw
             )
             card_rows = cards_result.fetchall()
 
-            cards = []
-            for card_row in card_rows:
-                card_data = card_row[5] if card_row[5] else {}
-                if isinstance(card_data, str):
-                    card_data = json.loads(card_data)
-
-                cards.append(CardInDeck(
-                    id=card_row[0],
-                    name=card_data.get("name", "Unknown"),
-                    mana_cost=card_data.get("mana_cost"),
-                    cmc=card_data.get("cmc", 0),
-                    type_line=card_data.get("type_line", ""),
-                    colors=card_data.get("colors"),
-                    rarity=card_data.get("rarity", "common"),
-                    image_uri=card_data.get("image_uri"),
-                    quantity=card_row[1],
-                    zone=card_row[2] or "mainboard",
-                    tags=card_row[3] or [],
-                    isCommander=card_row[4] or False,
-                ))
+            cards = [DeckController._parse_card_data(card_row) for card_row in card_rows]
 
             decks.append(DeckResponse(
                 id=deck_id,
@@ -112,15 +97,11 @@ async def list_decks(request: Request, token_data: TokenData = Depends(verify_jw
 
         return decks
 
-
-@router.post("/decks", response_model=DeckResponse, status_code=status.HTTP_201_CREATED)
-async def create_deck(
-    request: Request,
-    deck_data: DeckCreate,
-    token_data: TokenData = Depends(verify_jwt_token),
-):
-    """Create a new deck with optional cards."""
-    async with request.app.state.async_session() as session:
+    @staticmethod
+    async def create_deck(
+        session: AsyncSession, deck_data: DeckCreate, token_data: TokenData
+    ) -> DeckResponse:
+        """Create a new deck with optional cards."""
         # Create the deck
         result = await session.execute(
             text("""
@@ -141,15 +122,7 @@ async def create_deck(
         # Add cards if provided
         cards = []
         for card in deck_data.cards:
-            card_data_json = json.dumps({
-                "name": card.name,
-                "mana_cost": card.mana_cost,
-                "cmc": card.cmc,
-                "type_line": card.type_line,
-                "colors": card.colors,
-                "rarity": card.rarity,
-                "image_uri": card.image_uri,
-            })
+            card_data_json = DeckController._card_to_json(card)
 
             await session.execute(
                 text("""
@@ -185,15 +158,11 @@ async def create_deck(
             updatedAt=row[5].isoformat() if row[5] else None,
         )
 
-
-@router.get("/decks/{deck_id}", response_model=DeckResponse)
-async def get_deck(
-    request: Request,
-    deck_id: str = Path(...),
-    token_data: TokenData = Depends(verify_jwt_token),
-):
-    """Get a specific deck with its cards."""
-    async with request.app.state.async_session() as session:
+    @staticmethod
+    async def get_deck(
+        session: AsyncSession, deck_id: str, token_data: TokenData
+    ) -> DeckResponse:
+        """Get a specific deck with its cards."""
         # Get deck info
         result = await session.execute(
             text("""
@@ -220,26 +189,7 @@ async def get_deck(
         )
         card_rows = result.fetchall()
 
-        cards = []
-        for card_row in card_rows:
-            card_data = card_row[5] if card_row[5] else {}
-            if isinstance(card_data, str):
-                card_data = json.loads(card_data)
-
-            cards.append(CardInDeck(
-                id=card_row[0],
-                name=card_data.get("name", "Unknown"),
-                mana_cost=card_data.get("mana_cost"),
-                cmc=card_data.get("cmc", 0),
-                type_line=card_data.get("type_line", ""),
-                colors=card_data.get("colors"),
-                rarity=card_data.get("rarity", "common"),
-                image_uri=card_data.get("image_uri"),
-                quantity=card_row[1],
-                zone=card_row[2] or "mainboard",
-                tags=card_row[3] or [],
-                isCommander=card_row[4] or False,
-            ))
+        cards = [DeckController._parse_card_data(card_row) for card_row in card_rows]
 
         return DeckResponse(
             id=str(deck_row[0]),
@@ -251,16 +201,11 @@ async def get_deck(
             updatedAt=deck_row[5].isoformat() if deck_row[5] else None,
         )
 
-
-@router.put("/decks/{deck_id}", response_model=DeckResponse)
-async def update_deck(
-    request: Request,
-    deck_data: DeckUpdate,
-    deck_id: str = Path(...),
-    token_data: TokenData = Depends(verify_jwt_token),
-):
-    """Update a deck's name, format, description, and/or cards."""
-    async with request.app.state.async_session() as session:
+    @staticmethod
+    async def update_deck(
+        session: AsyncSession, deck_id: str, deck_data: DeckUpdate, token_data: TokenData
+    ) -> DeckResponse:
+        """Update a deck's name, format, description, and/or cards."""
         # Check ownership
         result = await session.execute(
             text("SELECT id FROM decks WHERE id = CAST(:deck_id AS uuid) AND user_id = CAST(:user_id AS uuid)"),
@@ -309,15 +254,7 @@ async def update_deck(
 
             # Insert new cards
             for card in deck_data.cards:
-                card_data_json = json.dumps({
-                    "name": card.name,
-                    "mana_cost": card.mana_cost,
-                    "cmc": card.cmc,
-                    "type_line": card.type_line,
-                    "colors": card.colors,
-                    "rarity": card.rarity,
-                    "image_uri": card.image_uri,
-                })
+                card_data_json = DeckController._card_to_json(card)
 
                 await session.execute(
                     text("""
@@ -346,26 +283,7 @@ async def update_deck(
                 {"deck_id": deck_id},
             )
             card_rows = result.fetchall()
-
-            for card_row in card_rows:
-                card_data = card_row[5] if card_row[5] else {}
-                if isinstance(card_data, str):
-                    card_data = json.loads(card_data)
-
-                cards.append(CardInDeck(
-                    id=card_row[0],
-                    name=card_data.get("name", "Unknown"),
-                    mana_cost=card_data.get("mana_cost"),
-                    cmc=card_data.get("cmc", 0),
-                    type_line=card_data.get("type_line", ""),
-                    colors=card_data.get("colors"),
-                    rarity=card_data.get("rarity", "common"),
-                    image_uri=card_data.get("image_uri"),
-                    quantity=card_row[1],
-                    zone=card_row[2] or "mainboard",
-                    tags=card_row[3] or [],
-                    isCommander=card_row[4] or False,
-                ))
+            cards = [DeckController._parse_card_data(card_row) for card_row in card_rows]
 
         await session.commit()
 
@@ -379,15 +297,11 @@ async def update_deck(
             updatedAt=row[5].isoformat() if row[5] else None,
         )
 
-
-@router.delete("/decks/{deck_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_deck(
-    request: Request,
-    deck_id: str = Path(...),
-    token_data: TokenData = Depends(verify_jwt_token),
-):
-    """Delete a deck."""
-    async with request.app.state.async_session() as session:
+    @staticmethod
+    async def delete_deck(
+        session: AsyncSession, deck_id: str, token_data: TokenData
+    ) -> None:
+        """Delete a deck."""
         result = await session.execute(
             text("DELETE FROM decks WHERE id = CAST(:deck_id AS uuid) AND user_id = CAST(:user_id AS uuid) RETURNING id"),
             {"deck_id": deck_id, "user_id": token_data.user_id},
