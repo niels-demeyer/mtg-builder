@@ -16,6 +16,7 @@
   import Graveyard from "./Graveyard.svelte";
   import ExilePile from "./ExilePile.svelte";
   import GameCardComponent from "./GameCard.svelte";
+  import ManaPaymentModal from "./ManaPaymentModal.svelte";
 
   interface Props {
     showControls?: boolean;
@@ -37,8 +38,6 @@
   // Mana payment modal state (for playing cards)
   let showPaymentModal = $state(false);
   let paymentModalCard = $state<GameCard | null>(null);
-  let paymentModalCost = $state<ParsedManaCost | null>(null);
-  let genericPaymentAllocation = $state<ManaPool>({ W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 });
   let paymentError = $state<string | null>(null);
 
   // Phase labels for display
@@ -137,26 +136,62 @@
       return;
     }
 
-    // Parse the mana cost
-    const cost = parseManaCost(card.mana_cost);
-
     // Free spells (0 mana cost)
+    const cost = parseManaCost(card.mana_cost);
     if (cost.total === 0) {
       gameStore.playCard(card.instanceId);
       return;
     }
 
+    // Use the reusable payment initiation
+    initiatePayment(card);
+  }
+
+  // Handle mana payment confirmation from modal
+  function handlePaymentConfirm(genericAllocation: Partial<ManaPool>) {
+    if (!paymentModalCard) return;
+
+    const result = gameStore.playCardWithMana(
+      paymentModalCard.instanceId,
+      genericAllocation
+    );
+
+    if (!result.success) {
+      paymentError = result.error || "Failed to play card";
+      setTimeout(() => { paymentError = null; }, 2000);
+    }
+
+    closePaymentModal();
+  }
+
+  function closePaymentModal() {
+    showPaymentModal = false;
+    paymentModalCard = null;
+  }
+
+  // Check if a card requires mana payment (not a land and has a cost)
+  function requiresManaPayment(card: GameCard): boolean {
+    const isLand = card.type_line.toLowerCase().includes("land");
+    if (isLand) return false;
+    const cost = parseManaCost(card.mana_cost);
+    return cost.total > 0;
+  }
+
+  // Initiate mana payment for a card (shows modal or auto-pays)
+  function initiatePayment(card: GameCard) {
+    if (!$currentPlayer) return;
+
+    const cost = parseManaCost(card.mana_cost);
+
     // Check if we can afford it
-    if (!$currentPlayer || !canPayManaCost($currentPlayer.manaPool, cost)) {
+    if (!canPayManaCost($currentPlayer.manaPool, cost)) {
       paymentError = "Not enough mana to cast this spell";
       setTimeout(() => { paymentError = null; }, 2000);
       return;
     }
 
-    // If there's generic mana, we might need to show a modal to choose how to pay
-    // For simplicity, if we have exact mana or no choices, just pay automatically
+    // If no generic mana, or exact mana available, we can auto-pay
     if (cost.generic === 0) {
-      // Only colored mana required - pay directly
       const result = gameStore.playCardWithMana(card.instanceId);
       if (!result.success) {
         paymentError = result.error || "Failed to play card";
@@ -179,12 +214,10 @@
     // Count how many colors have remaining mana
     const colorsWithMana = (["W", "U", "B", "R", "G", "C"] as ManaColor[])
       .filter((c) => remainingPool[c] > 0);
-
-    // If only one color has enough, or total remaining equals generic cost exactly, auto-pay
     const totalRemaining = colorsWithMana.reduce((sum, c) => sum + remainingPool[c], 0);
 
+    // If only one color has enough, or total equals generic cost exactly, auto-pay
     if (totalRemaining === cost.generic || colorsWithMana.length <= 1) {
-      // Auto-pay - no choices needed
       const result = gameStore.playCardWithMana(card.instanceId);
       if (!result.success) {
         paymentError = result.error || "Failed to play card";
@@ -193,69 +226,9 @@
       return;
     }
 
-    // Multiple colors available - show modal for user to choose how to pay generic
+    // Multiple colors available - show modal
     paymentModalCard = card;
-    paymentModalCost = cost;
-    genericPaymentAllocation = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
     showPaymentModal = true;
-  }
-
-  // Calculate remaining generic mana to allocate
-  const genericRemaining = $derived.by(() => {
-    if (!paymentModalCost) return 0;
-    const allocated = genericPaymentAllocation.W + genericPaymentAllocation.U +
-                      genericPaymentAllocation.B + genericPaymentAllocation.R +
-                      genericPaymentAllocation.G + genericPaymentAllocation.C;
-    return paymentModalCost.generic - allocated;
-  });
-
-  // Get available mana for generic payment (after colored costs)
-  const availableForGeneric = $derived.by(() => {
-    if (!$currentPlayer || !paymentModalCost) return { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
-    const pool = $currentPlayer.manaPool;
-    const cost = paymentModalCost;
-    return {
-      W: pool.W - cost.W,
-      U: pool.U - cost.U,
-      B: pool.B - cost.B,
-      R: pool.R - cost.R,
-      G: pool.G - cost.G,
-      C: pool.C - cost.C,
-    };
-  });
-
-  function adjustGenericPayment(color: ManaColor, delta: number) {
-    const available = availableForGeneric[color];
-    const current = genericPaymentAllocation[color];
-    const newValue = Math.max(0, Math.min(available, current + delta));
-
-    // Don't allow over-allocation
-    if (delta > 0 && genericRemaining <= 0) return;
-
-    genericPaymentAllocation = { ...genericPaymentAllocation, [color]: newValue };
-  }
-
-  function confirmPayment() {
-    if (!paymentModalCard || genericRemaining !== 0) return;
-
-    const result = gameStore.playCardWithMana(
-      paymentModalCard.instanceId,
-      genericPaymentAllocation
-    );
-
-    if (!result.success) {
-      paymentError = result.error || "Failed to play card";
-      setTimeout(() => { paymentError = null; }, 2000);
-    }
-
-    closePaymentModal();
-  }
-
-  function closePaymentModal() {
-    showPaymentModal = false;
-    paymentModalCard = null;
-    paymentModalCost = null;
-    genericPaymentAllocation = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
   }
 
   function handleCardContextMenu(card: GameCard, event: MouseEvent) {
@@ -270,9 +243,20 @@
   }
 
   function moveCardTo(zone: GameZone) {
-    if (contextMenuCard) {
-      gameStore.moveCard(contextMenuCard.instanceId, zone);
+    if (!contextMenuCard) {
+      closeContextMenu();
+      return;
     }
+
+    // If moving from hand to battlefield, trigger mana payment
+    if (zone === "battlefield" && contextMenuCard.zone === "hand") {
+      const card = contextMenuCard;
+      closeContextMenu();
+      tryPlayCard(card);
+      return;
+    }
+
+    gameStore.moveCard(contextMenuCard.instanceId, zone);
     closeContextMenu();
   }
 
@@ -296,9 +280,16 @@
   }
 
   function handleCardDropOnBattlefield(card: GameCard) {
-    if (card.zone !== "battlefield") {
-      gameStore.moveCard(card.instanceId, "battlefield");
+    if (card.zone === "battlefield") return;
+
+    // Cards from hand need to pay mana costs (except lands)
+    if (card.zone === "hand") {
+      tryPlayCard(card);
+      return;
     }
+
+    // Cards from other zones can be moved directly (e.g., reanimation effects)
+    gameStore.moveCard(card.instanceId, "battlefield");
   }
 
   function handleCardDropOnGraveyard(card: GameCard) {
@@ -612,62 +603,13 @@
     {/if}
 
     <!-- Mana Payment Modal (for casting spells) -->
-    {#if showPaymentModal && paymentModalCard && paymentModalCost}
-      <div class="modal-overlay" onclick={closePaymentModal}>
-        <div class="payment-modal" onclick={(e) => e.stopPropagation()}>
-          <h3>Pay Mana Cost</h3>
-          <p class="modal-subtitle">Casting: {paymentModalCard.name}</p>
-          <p class="mana-cost-display">{paymentModalCard.mana_cost || "Free"}</p>
-
-          {#if paymentModalCost.generic > 0}
-            <div class="generic-payment-section">
-              <p class="section-label">
-                Pay {paymentModalCost.generic} generic mana
-                {#if genericRemaining > 0}
-                  <span class="remaining">({genericRemaining} remaining)</span>
-                {/if}
-              </p>
-              <div class="generic-allocators">
-                {#each (["W", "U", "B", "R", "G", "C"] as ManaColor[]) as color}
-                  {@const available = availableForGeneric[color]}
-                  {@const allocated = genericPaymentAllocation[color]}
-                  {#if available > 0}
-                    <div class="allocator">
-                      <button
-                        class="alloc-btn minus"
-                        onclick={() => adjustGenericPayment(color, -1)}
-                        disabled={allocated === 0}
-                      >−</button>
-                      <div
-                        class="alloc-pip"
-                        style="background: {manaColorInfo[color].bg}; color: {manaColorInfo[color].text};"
-                      >
-                        {allocated}/{available}
-                      </div>
-                      <button
-                        class="alloc-btn plus"
-                        onclick={() => adjustGenericPayment(color, 1)}
-                        disabled={allocated >= available || genericRemaining === 0}
-                      >+</button>
-                    </div>
-                  {/if}
-                {/each}
-              </div>
-            </div>
-          {/if}
-
-          <div class="payment-actions">
-            <button
-              class="confirm-payment"
-              onclick={confirmPayment}
-              disabled={genericRemaining !== 0}
-            >
-              Cast Spell
-            </button>
-            <button class="modal-cancel" onclick={closePaymentModal}>Cancel</button>
-          </div>
-        </div>
-      </div>
+    {#if showPaymentModal && paymentModalCard && $currentPlayer}
+      <ManaPaymentModal
+        card={paymentModalCard}
+        manaPool={$currentPlayer.manaPool}
+        onConfirm={handlePaymentConfirm}
+        onCancel={closePaymentModal}
+      />
     {/if}
 
     <!-- Payment Error Toast -->
@@ -1177,119 +1119,6 @@
   .modal-cancel:hover {
     background: hsl(var(--accent));
     color: hsl(var(--foreground));
-  }
-
-  /* Mana Payment Modal */
-  .payment-modal {
-    background: hsl(var(--card));
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-lg);
-    padding: 1.5rem;
-    min-width: 340px;
-    text-align: center;
-    animation: slideUp 0.2s ease-out;
-  }
-
-  .mana-cost-display {
-    font-size: 1.5rem;
-    font-weight: 600;
-    margin: 0.5rem 0 1.5rem;
-    color: hsl(var(--foreground));
-  }
-
-  .generic-payment-section {
-    margin-bottom: 1.5rem;
-  }
-
-  .section-label {
-    font-size: 0.875rem;
-    color: hsl(var(--muted-foreground));
-    margin-bottom: 0.75rem;
-  }
-
-  .section-label .remaining {
-    color: hsl(var(--primary));
-    font-weight: 600;
-  }
-
-  .generic-allocators {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.75rem;
-  }
-
-  .allocator {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  .alloc-btn {
-    width: 28px;
-    height: 28px;
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-sm);
-    background: hsl(var(--secondary));
-    color: hsl(var(--foreground));
-    font-size: 1rem;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-  }
-
-  .alloc-btn:hover:not(:disabled) {
-    background: hsl(var(--accent));
-  }
-
-  .alloc-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .alloc-btn.minus:hover:not(:disabled) {
-    background: hsl(var(--destructive));
-    color: white;
-  }
-
-  .alloc-btn.plus:hover:not(:disabled) {
-    background: hsl(142 76% 36%);
-    color: white;
-  }
-
-  .alloc-pip {
-    min-width: 50px;
-    padding: 0.25rem 0.5rem;
-    border-radius: var(--radius-sm);
-    font-size: 0.875rem;
-    font-weight: 600;
-    text-align: center;
-  }
-
-  .payment-actions {
-    display: flex;
-    gap: 0.75rem;
-    justify-content: center;
-  }
-
-  .confirm-payment {
-    padding: 0.625rem 1.5rem;
-    background: hsl(var(--primary));
-    color: hsl(var(--primary-foreground));
-    border: none;
-    border-radius: var(--radius-sm);
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-  }
-
-  .confirm-payment:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .confirm-payment:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   /* Payment Error Toast */
