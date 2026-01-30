@@ -159,79 +159,62 @@ export function payManaCost(
   return { success: true, newPool };
 }
 
-// Land mana production patterns
-const landManaProduction: Record<string, ManaColor[]> = {
-  // Basic lands
-  "plains": ["W"],
-  "island": ["U"],
-  "swamp": ["B"],
-  "mountain": ["R"],
-  "forest": ["G"],
-  "wastes": ["C"],
-  // Common dual land patterns (detected by name)
-  "hallowed fountain": ["W", "U"],
-  "watery grave": ["U", "B"],
-  "blood crypt": ["B", "R"],
-  "stomping ground": ["R", "G"],
-  "temple garden": ["G", "W"],
-  "godless shrine": ["W", "B"],
-  "steam vents": ["U", "R"],
-  "overgrown tomb": ["B", "G"],
-  "sacred foundry": ["R", "W"],
-  "breeding pool": ["G", "U"],
-  // Check lands
-  "glacial fortress": ["W", "U"],
-  "drowned catacomb": ["U", "B"],
-  "dragonskull summit": ["B", "R"],
-  "rootbound crag": ["R", "G"],
-  "sunpetal grove": ["G", "W"],
-  "isolated chapel": ["W", "B"],
-  "sulfur falls": ["U", "R"],
-  "woodland cemetery": ["B", "G"],
-  "clifftop retreat": ["R", "W"],
-  "hinterland harbor": ["G", "U"],
-  // Pathways (MDFC)
-  "brightclimb pathway": ["W", "B"],
-  "clearwater pathway": ["U", "B"],
-  "cragcrown pathway": ["R", "G"],
-  "needleverge pathway": ["R", "W"],
-  "riverglide pathway": ["U", "R"],
-  "blightstep pathway": ["B", "R"],
-  "barkchannel pathway": ["G", "U"],
-  "branchloft pathway": ["G", "W"],
-  "darkbore pathway": ["B", "G"],
-  "hengegate pathway": ["W", "U"],
-  // Triomes
-  "indatha triome": ["W", "B", "G"],
-  "ketria triome": ["U", "R", "G"],
-  "raugrin triome": ["U", "R", "W"],
-  "savai triome": ["R", "W", "B"],
-  "zagoth triome": ["B", "G", "U"],
-  "spara's headquarters": ["G", "W", "U"],
-  "raffine's tower": ["W", "U", "B"],
-  "xander's lounge": ["U", "B", "R"],
-  "ziatora's proving ground": ["B", "R", "G"],
-  "jetmir's garden": ["R", "G", "W"],
-  // Command Tower produces all colors
-  "command tower": ["W", "U", "B", "R", "G"],
-  // City of Brass / Mana Confluence
-  "city of brass": ["W", "U", "B", "R", "G"],
-  "mana confluence": ["W", "U", "B", "R", "G"],
-  // Fetch lands don't tap for mana
-};
+// Parse a land's oracle text to determine what mana it can produce
+export function parseLandManaFromText(oracleText: string): ManaColor[] {
+  const text = oracleText.toLowerCase();
+  const colors: ManaColor[] = [];
 
-// Detect what mana a land can produce
-export function detectLandMana(card: GameCard): ManaColor[] {
-  const name = card.name.toLowerCase();
-  const typeLine = card.type_line.toLowerCase();
-  const oracleText = (card.oracle_text || "").toLowerCase();
-
-  // Check known lands first
-  if (landManaProduction[name]) {
-    return landManaProduction[name];
+  // Check for "any color" patterns first (most permissive)
+  if (
+    text.includes("add one mana of any color") ||
+    text.includes("adds one mana of any color") ||
+    text.includes("add mana of any color") ||
+    text.includes("any one color") ||
+    text.includes("mana of any type")
+  ) {
+    return ["W", "U", "B", "R", "G"];
   }
 
-  // Check basic land types in type line
+  // Match mana symbols in "add" statements: {W}, {U}, {B}, {R}, {G}, {C}
+  // Handles patterns like "Add {W}", "Add {W} or {U}", "Add {W}, {U}, or {B}"
+  const addPattern = /add\s+(?:\{[wubrgc]\}(?:\s*(?:,|or)\s*)?)+/gi;
+  const addMatches = text.match(addPattern);
+
+  if (addMatches) {
+    for (const match of addMatches) {
+      if (match.includes("{w}")) colors.push("W");
+      if (match.includes("{u}")) colors.push("U");
+      if (match.includes("{b}")) colors.push("B");
+      if (match.includes("{r}")) colors.push("R");
+      if (match.includes("{g}")) colors.push("G");
+      if (match.includes("{c}")) colors.push("C");
+    }
+  }
+
+  // Also check for standalone mana symbol additions (some cards use different phrasing)
+  const symbolPattern = /\{([wubrgc])\}/gi;
+  let symbolMatch;
+  while ((symbolMatch = symbolPattern.exec(text)) !== null) {
+    // Only count if it's in context of adding mana (not costs)
+    const contextStart = Math.max(0, symbolMatch.index - 20);
+    const context = text.substring(contextStart, symbolMatch.index);
+    if (context.includes("add") || context.includes("produce")) {
+      const color = symbolMatch[1].toUpperCase() as ManaColor;
+      if (!colors.includes(color)) {
+        colors.push(color);
+      }
+    }
+  }
+
+  return [...new Set(colors)];
+}
+
+// Detect what mana a land can produce by reading its text
+export function detectLandMana(card: GameCard): ManaColor[] {
+  const typeLine = card.type_line.toLowerCase();
+  const oracleText = card.oracle_text || "";
+
+  // Check basic land types in type line first (most reliable)
   const colors: ManaColor[] = [];
   if (typeLine.includes("plains")) colors.push("W");
   if (typeLine.includes("island")) colors.push("U");
@@ -242,24 +225,11 @@ export function detectLandMana(card: GameCard): ManaColor[] {
   if (colors.length > 0) return colors;
 
   // Parse oracle text for mana production
-  if (oracleText.includes("add {w}") || oracleText.includes("add one mana of any color")) colors.push("W");
-  if (oracleText.includes("add {u}") || oracleText.includes("add one mana of any color")) colors.push("U");
-  if (oracleText.includes("add {b}") || oracleText.includes("add one mana of any color")) colors.push("B");
-  if (oracleText.includes("add {r}") || oracleText.includes("add one mana of any color")) colors.push("R");
-  if (oracleText.includes("add {g}") || oracleText.includes("add one mana of any color")) colors.push("G");
-  if (oracleText.includes("add {c}")) colors.push("C");
-
-  // Check for "any color" text
-  if (oracleText.includes("any color") && colors.length === 0) {
-    return ["W", "U", "B", "R", "G"];
-  }
+  const parsedColors = parseLandManaFromText(oracleText);
+  if (parsedColors.length > 0) return parsedColors;
 
   // Default to colorless if we can't determine
-  if (colors.length === 0) {
-    colors.push("C");
-  }
-
-  return [...new Set(colors)]; // Remove duplicates
+  return ["C"];
 }
 
 // Helper to generate unique IDs
