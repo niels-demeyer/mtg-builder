@@ -136,7 +136,14 @@
   .training.fullscreen {
     padding: 0;
     max-width: none;
-    height: 100%;
+    height: 100vh;
+    width: 100vw;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 50;
+    background: hsl(var(--background));
+    overflow: hidden;
   }
 
   .training-header {
@@ -332,9 +339,11 @@
 
   /* Game wrapper for goldfish mode */
   .game-wrapper {
-    height: 100%;
+    height: 100vh;
+    width: 100%;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
   }
 
   .game-header-bar {
@@ -357,6 +366,7 @@
 
   .game-area {
     flex: 1;
+    min-height: 0;
     overflow: hidden;
   }
 </style>

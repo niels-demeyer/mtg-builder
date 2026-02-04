@@ -228,10 +228,12 @@
 
 <style>
   .opening-hands {
-    height: 100%;
+    height: 100vh;
+    width: 100%;
     display: flex;
     flex-direction: column;
     background: hsl(var(--background));
+    overflow: hidden;
   }
 
   /* Header */

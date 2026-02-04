@@ -24,19 +24,28 @@
 
   // Hover preview state
   let hoveredCard = $state<GameCard | null>(null);
-  let previewPosition = $state<"left" | "right">("left");
+  let previewX = $state(0);
 
   function handleCardHover(card: GameCard, event: MouseEvent) {
     hoveredCard = card;
-    // Position preview on opposite side of where the card is
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const screenMiddle = window.innerWidth / 2;
-    previewPosition = rect.left < screenMiddle ? "right" : "left";
+    // Center the preview above the card
+    previewX = rect.left + rect.width / 2;
   }
 
   function handleCardLeave() {
     hoveredCard = null;
   }
+
+  // Calculate preview horizontal position (keeping it in viewport bounds)
+  const previewStyle = $derived.by(() => {
+    const previewWidth = 280;
+    const padding = 16;
+    const maxX = window.innerWidth - previewWidth / 2 - padding;
+    const minX = previewWidth / 2 + padding;
+    const clampedX = Math.max(minX, Math.min(maxX, previewX));
+    return `left: ${clampedX}px; transform: translateX(-50%);`;
+  });
 
   // Calculate card positions in a fan layout
   function getCardStyle(index: number, total: number): string {
@@ -53,24 +62,6 @@
     return `transform: translateX(${offsetX}px) translateY(${offsetY}px) rotate(${angle * 0.3}deg);`;
   }
 
-  // Parse mana symbols for display
-  function parseManaSymbols(manaCost: string | undefined): string[] {
-    if (!manaCost) return [];
-    const matches = manaCost.match(/\{[^}]+\}/g);
-    return matches || [];
-  }
-
-  // Get mana symbol color class
-  function getManaClass(symbol: string): string {
-    const s = symbol.toLowerCase();
-    if (s.includes("w")) return "mana-w";
-    if (s.includes("u")) return "mana-u";
-    if (s.includes("b")) return "mana-b";
-    if (s.includes("r")) return "mana-r";
-    if (s.includes("g")) return "mana-g";
-    if (s.includes("c")) return "mana-c";
-    return "mana-generic";
-  }
 </script>
 
 <div class="hand-zone">
@@ -105,46 +96,14 @@
     {/if}
   </div>
 
-  <!-- Hover Preview Panel -->
+  <!-- Hover Preview - Large card image above the hand -->
   {#if hoveredCard}
-    <div class="hover-preview" class:preview-left={previewPosition === "left"} class:preview-right={previewPosition === "right"}>
-      <div class="preview-card">
-        <img
-          src={hoveredCard.image_uri || "/card-placeholder.png"}
-          alt={hoveredCard.name}
-          class="preview-image"
-        />
-      </div>
-      <div class="preview-details">
-        <div class="preview-header">
-          <h3 class="preview-name">{hoveredCard.name}</h3>
-          {#if hoveredCard.mana_cost}
-            <div class="preview-mana">
-              {#each parseManaSymbols(hoveredCard.mana_cost) as symbol}
-                <span class="mana-symbol {getManaClass(symbol)}">{symbol.replace(/[{}]/g, "")}</span>
-              {/each}
-            </div>
-          {/if}
-        </div>
-        <p class="preview-type">{hoveredCard.type_line}</p>
-        {#if hoveredCard.oracle_text}
-          <div class="preview-text">
-            {#each hoveredCard.oracle_text.split("\n") as line}
-              <p>{line}</p>
-            {/each}
-          </div>
-        {/if}
-        {#if hoveredCard.power !== undefined && hoveredCard.toughness !== undefined}
-          <div class="preview-pt">
-            <span>{hoveredCard.power}/{hoveredCard.toughness}</span>
-          </div>
-        {/if}
-        <div class="preview-actions">
-          <span class="action-hint">Click to select</span>
-          <span class="action-hint">Double-click to play</span>
-          <span class="action-hint">Right-click for options</span>
-        </div>
-      </div>
+    <div class="hover-preview" style={previewStyle}>
+      <img
+        src={hoveredCard.image_uri || "/card-placeholder.png"}
+        alt={hoveredCard.name}
+        class="preview-image"
+      />
     </div>
   {/if}
 </div>
@@ -224,176 +183,43 @@
     font-style: italic;
   }
 
-  /* Hover Preview Panel */
+  /* Hover Preview - Large card displayed above the hand */
   .hover-preview {
     position: fixed;
     bottom: 240px;
-    display: flex;
-    gap: 1rem;
-    padding: 1rem;
-    background: hsl(var(--card));
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-lg);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     z-index: 1000;
-    max-width: 500px;
-    animation: fadeIn 0.15s ease-out;
+    pointer-events: none;
+    animation: previewFadeIn 0.1s ease-out;
   }
 
-  .hover-preview.preview-left {
-    left: 1rem;
-  }
-
-  .hover-preview.preview-right {
-    right: 1rem;
-  }
-
-  @keyframes fadeIn {
+  @keyframes previewFadeIn {
     from {
       opacity: 0;
-      transform: translateY(10px);
+      transform: translateX(-50%) translateY(10px);
     }
     to {
       opacity: 1;
-      transform: translateY(0);
+      transform: translateX(-50%) translateY(0);
     }
   }
 
-  .preview-card {
-    flex-shrink: 0;
-  }
-
   .preview-image {
-    width: 200px;
+    width: 280px;
     height: auto;
-    border-radius: var(--radius-md);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  }
-
-  .preview-details {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    min-width: 200px;
-    max-width: 260px;
-  }
-
-  .preview-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-
-  .preview-name {
-    margin: 0;
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: hsl(var(--foreground));
-    line-height: 1.2;
-  }
-
-  .preview-mana {
-    display: flex;
-    gap: 0.2rem;
-    flex-shrink: 0;
-  }
-
-  .mana-symbol {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    font-size: 0.7rem;
-    font-weight: 700;
-  }
-
-  .mana-w { background: #f9faf4; color: #1a1a1a; }
-  .mana-u { background: #0e68ab; color: white; }
-  .mana-b { background: #150b00; color: white; border: 1px solid #444; }
-  .mana-r { background: #d3202a; color: white; }
-  .mana-g { background: #00733e; color: white; }
-  .mana-c { background: #ccc; color: #1a1a1a; }
-  .mana-generic { background: #888; color: white; }
-
-  .preview-type {
-    margin: 0;
-    font-size: 0.85rem;
-    color: hsl(var(--muted-foreground));
-    font-style: italic;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid hsl(var(--border));
-  }
-
-  .preview-text {
-    flex: 1;
-    overflow-y: auto;
-    max-height: 150px;
-  }
-
-  .preview-text p {
-    margin: 0 0 0.5rem 0;
-    font-size: 0.85rem;
-    color: hsl(var(--foreground));
-    line-height: 1.4;
-  }
-
-  .preview-text p:last-child {
-    margin-bottom: 0;
-  }
-
-  .preview-pt {
-    display: flex;
-    justify-content: flex-end;
-    padding-top: 0.5rem;
-    border-top: 1px solid hsl(var(--border));
-  }
-
-  .preview-pt span {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: hsl(var(--primary));
-    background: hsl(var(--background));
-    padding: 0.25rem 0.75rem;
-    border-radius: var(--radius-sm);
-  }
-
-  .preview-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid hsl(var(--border));
-    margin-top: auto;
-  }
-
-  .action-hint {
-    font-size: 0.7rem;
-    color: hsl(var(--muted-foreground));
-    background: hsl(var(--background));
-    padding: 0.2rem 0.5rem;
-    border-radius: var(--radius-sm);
+    border-radius: 12px;
+    box-shadow:
+      0 0 0 2px hsl(var(--border)),
+      0 20px 60px rgba(0, 0, 0, 0.5),
+      0 0 40px rgba(0, 0, 0, 0.3);
   }
 
   @media (max-width: 768px) {
     .hover-preview {
-      left: 50% !important;
-      right: auto !important;
-      transform: translateX(-50%);
       bottom: 260px;
-      flex-direction: column;
-      max-width: calc(100vw - 2rem);
     }
 
     .preview-image {
-      width: 150px;
-      margin: 0 auto;
-    }
-
-    .preview-details {
-      max-width: none;
+      width: 220px;
     }
   }
 </style>
