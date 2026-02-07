@@ -29,7 +29,7 @@
   });
 
   function connectAndCreate(deck: Deck) {
-    const token = localStorage.getItem('mtg_token');
+    const token = localStorage.getItem('auth-token');
     const userId = $authStore.user?.id;
     if (!token || !userId) return;
 
@@ -55,7 +55,7 @@
       return;
     }
 
-    const token = localStorage.getItem('mtg_token');
+    const token = localStorage.getItem('auth-token');
     const userId = $authStore.user?.id;
     if (!token || !userId) return;
 
