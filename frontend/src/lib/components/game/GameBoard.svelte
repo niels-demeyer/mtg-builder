@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { GameCard, GameZone, GamePhase, ManaPool } from "$lib/types";
+  import type { GameCard, GameZone, GamePhase, ManaPool, PlayerState, GameBoardActions, GameBoardInfo } from "$lib/types";
   import {
     gameStore,
     currentGame,
@@ -21,9 +21,48 @@
   interface Props {
     showControls?: boolean;
     showPhases?: boolean;
+    /** Override player state (for multiplayer). Falls back to gameStore if not provided. */
+    player?: PlayerState;
+    /** Override game info (for multiplayer). Falls back to gameStore if not provided. */
+    gameInfo?: GameBoardInfo;
+    /** Override action handlers (for multiplayer). Falls back to gameStore if not provided. */
+    actions?: GameBoardActions;
   }
 
-  let { showControls = true, showPhases = true }: Props = $props();
+  let { showControls = true, showPhases = true, player: playerProp, gameInfo: gameInfoProp, actions: actionsProp }: Props = $props();
+
+  // Dual-mode: use props if provided, otherwise fall back to local gameStore
+  const effectivePlayer = $derived(playerProp ?? effectivePlayer);
+  const effectiveGame = $derived(gameInfoProp ?? ($currentGame ? {
+    turnNumber: effectiveGame.turnNumber,
+    phase: effectiveGame.phase,
+    deckName: effectiveGame.deckName,
+    format: effectiveGame.format,
+    started: effectiveGame.started,
+  } : null));
+
+  // Action adapter: use multiplayer actions or local gameStore
+  const act = $derived(actionsProp ?? {
+    drawCard: () => gameStore.drawCard(),
+    moveCard: (id: string, zone: GameZone) => gameStore.moveCard(id, zone),
+    playCard: (id: string) => gameStore.playCard(id),
+    playCardWithMana: (id: string, alloc?: Partial<ManaPool>) => gameStore.playCardWithMana(id, alloc),
+    toggleTap: (id: string) => gameStore.toggleTap(id),
+    tapLandForMana: (id: string, color: string) => gameStore.tapLandForMana(id, color as ManaColor),
+    untapAll: () => gameStore.untapAll(),
+    nextTurn: () => { gameStore.untapAll(); gameStore.clearManaPool(); gameStore.nextTurn(); gameStore.drawCard(); },
+    setPhase: (phase: GamePhase) => gameStore.setPhase(phase),
+    updateLife: (change: number) => gameStore.updateLife(change),
+    addCounter: (id: string, type: string) => gameStore.addCounter(id, type),
+    removeCounter: (id: string, type: string) => gameStore.removeCounter(id, type),
+    shuffleLibrary: () => gameStore.shuffleLibrary(),
+    mill: (count: number) => gameStore.mill(count),
+    discardCard: (id: string) => gameStore.discardCard(id),
+    addMana: (color: string, amount?: number) => gameStore.addMana(color as ManaColor, amount),
+    removeMana: (color: string, amount?: number) => gameStore.removeMana(color as ManaColor, amount),
+    clearManaPool: () => gameStore.clearManaPool(),
+    selectCard: (card: GameCard | null) => gameStore.selectCard(card),
+  } satisfies GameBoardActions);
 
   let selectedCard = $state<GameCard | null>(null);
   let contextMenuCard = $state<GameCard | null>(null);
@@ -68,14 +107,14 @@
 
   // Calculate total mana in pool
   const totalMana = $derived.by(() => {
-    if (!$currentPlayer?.manaPool) return 0;
-    const pool = $currentPlayer.manaPool;
+    if (!effectivePlayer?.manaPool) return 0;
+    const pool = effectivePlayer.manaPool;
     return pool.W + pool.U + pool.B + pool.R + pool.G + pool.C;
   });
 
   function handleCardClick(card: GameCard) {
     selectedCard = card;
-    gameStore.selectCard(card);
+    act.selectCard(card);
   }
 
   function handleCardDoubleClick(card: GameCard) {
@@ -89,13 +128,13 @@
       if (typeLine.includes("land")) {
         if (card.isTapped) {
           // Already tapped, just untap
-          gameStore.toggleTap(card.instanceId);
+          act.toggleTap(card.instanceId);
         } else {
           // Tap for mana
           const colors = detectLandMana(card);
           if (colors.length === 1) {
             // Single color, tap directly
-            gameStore.tapLandForMana(card.instanceId, colors[0]);
+            act.tapLandForMana(card.instanceId, colors[0]);
           } else if (colors.length > 1) {
             // Multiple colors, show modal
             manaModalCard = card;
@@ -103,19 +142,19 @@
             showManaModal = true;
           } else {
             // Unknown, just tap without adding mana
-            gameStore.toggleTap(card.instanceId);
+            act.toggleTap(card.instanceId);
           }
         }
       } else {
         // Non-land, just tap/untap
-        gameStore.toggleTap(card.instanceId);
+        act.toggleTap(card.instanceId);
       }
     }
   }
 
   function selectManaColor(color: ManaColor) {
     if (manaModalCard) {
-      gameStore.tapLandForMana(manaModalCard.instanceId, color);
+      act.tapLandForMana(manaModalCard.instanceId, color);
     }
     closeManaModal();
   }
@@ -132,14 +171,14 @@
 
     // Lands are free to play
     if (isLand) {
-      gameStore.playCard(card.instanceId);
+      act.playCard(card.instanceId);
       return;
     }
 
     // Free spells (0 mana cost)
     const cost = parseManaCost(card.mana_cost);
     if (cost.total === 0) {
-      gameStore.playCard(card.instanceId);
+      act.playCard(card.instanceId);
       return;
     }
 
@@ -151,7 +190,7 @@
   function handlePaymentConfirm(genericAllocation: Partial<ManaPool>) {
     if (!paymentModalCard) return;
 
-    const result = gameStore.playCardWithMana(
+    const result = act.playCardWithMana(
       paymentModalCard.instanceId,
       genericAllocation
     );
@@ -179,12 +218,12 @@
 
   // Initiate mana payment for a card (shows modal or auto-pays)
   function initiatePayment(card: GameCard) {
-    if (!$currentPlayer) return;
+    if (!effectivePlayer) return;
 
     const cost = parseManaCost(card.mana_cost);
 
     // Check if we can afford it
-    if (!canPayManaCost($currentPlayer.manaPool, cost)) {
+    if (!canPayManaCost(effectivePlayer.manaPool, cost)) {
       paymentError = "Not enough mana to cast this spell";
       setTimeout(() => { paymentError = null; }, 2000);
       return;
@@ -192,7 +231,7 @@
 
     // If no generic mana, or exact mana available, we can auto-pay
     if (cost.generic === 0) {
-      const result = gameStore.playCardWithMana(card.instanceId);
+      const result = act.playCardWithMana(card.instanceId);
       if (!result.success) {
         paymentError = result.error || "Failed to play card";
         setTimeout(() => { paymentError = null; }, 2000);
@@ -201,7 +240,7 @@
     }
 
     // Calculate available mana after paying colored costs
-    const pool = $currentPlayer.manaPool;
+    const pool = effectivePlayer.manaPool;
     const remainingPool: ManaPool = {
       W: pool.W - cost.W,
       U: pool.U - cost.U,
@@ -218,7 +257,7 @@
 
     // If only one color has enough, or total equals generic cost exactly, auto-pay
     if (totalRemaining === cost.generic || colorsWithMana.length <= 1) {
-      const result = gameStore.playCardWithMana(card.instanceId);
+      const result = act.playCardWithMana(card.instanceId);
       if (!result.success) {
         paymentError = result.error || "Failed to play card";
         setTimeout(() => { paymentError = null; }, 2000);
@@ -256,27 +295,27 @@
       return;
     }
 
-    gameStore.moveCard(contextMenuCard.instanceId, zone);
+    act.moveCard(contextMenuCard.instanceId, zone);
     closeContextMenu();
   }
 
   function handleTapForMana(color: ManaColor) {
     if (contextMenuCard) {
-      gameStore.tapLandForMana(contextMenuCard.instanceId, color);
+      act.tapLandForMana(contextMenuCard.instanceId, color);
     }
     closeContextMenu();
   }
 
   function handleDrawCard() {
-    gameStore.drawCard();
+    act.drawCard();
   }
 
   function handleShuffleLibrary() {
-    gameStore.shuffleLibrary();
+    act.shuffleLibrary();
   }
 
   function handleMill(count: number) {
-    gameStore.mill(count);
+    act.mill(count);
   }
 
   function handleCardDropOnBattlefield(card: GameCard) {
@@ -289,53 +328,50 @@
     }
 
     // Cards from other zones can be moved directly (e.g., reanimation effects)
-    gameStore.moveCard(card.instanceId, "battlefield");
+    act.moveCard(card.instanceId, "battlefield");
   }
 
   function handleCardDropOnGraveyard(card: GameCard) {
     if (card.zone !== "graveyard") {
-      gameStore.moveCard(card.instanceId, "graveyard");
+      act.moveCard(card.instanceId, "graveyard");
     }
   }
 
   function handleCardDropOnExile(card: GameCard) {
     if (card.zone !== "exile") {
-      gameStore.moveCard(card.instanceId, "exile");
+      act.moveCard(card.instanceId, "exile");
     }
   }
 
   function handleCardDropOnLibrary(card: GameCard) {
     if (card.zone !== "library") {
-      gameStore.moveCard(card.instanceId, "library");
-      gameStore.shuffleLibrary();
+      act.moveCard(card.instanceId, "library");
+      act.shuffleLibrary();
     }
   }
 
   function handleLifeChange(amount: number) {
-    gameStore.updateLife(amount);
+    act.updateLife(amount);
   }
 
   function handleUntapAll() {
-    gameStore.untapAll();
+    act.untapAll();
   }
 
   function handleNextTurn() {
-    gameStore.untapAll();
-    gameStore.clearManaPool();
-    gameStore.nextTurn();
-    gameStore.drawCard();
+    act.nextTurn();
   }
 
   function handleSetPhase(phase: GamePhase) {
-    gameStore.setPhase(phase);
+    act.setPhase(phase);
   }
 
   function handleClearMana() {
-    gameStore.clearManaPool();
+    act.clearManaPool();
   }
 
   function handleRemoveMana(color: ManaColor) {
-    gameStore.removeMana(color);
+    act.removeMana(color);
   }
 
   // Get mana colors for context menu if card is a land
@@ -357,20 +393,20 @@
 
 <svelte:window onclick={handleGlobalClick} />
 
-{#if $currentGame && $currentPlayer}
+{#if effectiveGame && effectivePlayer}
   <div class="game-board">
     <!-- Top bar with game info and life tracker -->
     {#if showControls}
       <div class="game-header">
         <div class="game-info">
-          <span class="deck-name">{$currentGame.deckName}</span>
-          <span class="format-badge">{$currentGame.format}</span>
-          <span class="turn-counter">Turn {$currentGame.turnNumber}</span>
+          <span class="deck-name">{effectiveGame.deckName}</span>
+          <span class="format-badge">{effectiveGame.format}</span>
+          <span class="turn-counter">Turn {effectiveGame.turnNumber}</span>
         </div>
 
         <div class="life-tracker">
           <button class="life-btn minus" onclick={() => handleLifeChange(-1)}>−</button>
-          <span class="life-total">{$currentPlayer.life}</span>
+          <span class="life-total">{effectivePlayer.life}</span>
           <button class="life-btn plus" onclick={() => handleLifeChange(1)}>+</button>
         </div>
 
@@ -379,7 +415,7 @@
           <span class="mana-label">Mana:</span>
           <div class="mana-symbols">
             {#each (["W", "U", "B", "R", "G", "C"] as ManaColor[]) as color}
-              {@const count = $currentPlayer.manaPool[color]}
+              {@const count = effectivePlayer.manaPool[color]}
               {#if count > 0}
                 <button
                   class="mana-pip"
@@ -411,12 +447,12 @@
     {/if}
 
     <!-- Phase tracker -->
-    {#if showPhases && $currentGame.started}
+    {#if showPhases && effectiveGame.started}
       <div class="phase-tracker">
         {#each Object.entries(phaseLabels) as [phase, label] (phase)}
           <button
             class="phase-btn"
-            class:active={$currentGame.phase === phase}
+            class:active={effectiveGame.phase === phase}
             onclick={() => handleSetPhase(phase as GamePhase)}
           >
             {label}
@@ -430,7 +466,7 @@
       <!-- Left sidebar with library and zones -->
       <div class="left-zones">
         <Library
-          cards={$currentPlayer.library}
+          cards={effectivePlayer.library}
           onDraw={handleDrawCard}
           onShuffle={handleShuffleLibrary}
           onMill={handleMill}
@@ -438,11 +474,11 @@
         />
 
         <!-- Command zone for commanders -->
-        {#if $currentPlayer.command.length > 0}
+        {#if effectivePlayer.command.length > 0}
           <div class="command-zone">
             <div class="zone-label">Command</div>
             <div class="command-cards">
-              {#each $currentPlayer.command as card (card.instanceId)}
+              {#each effectivePlayer.command as card (card.instanceId)}
                 <GameCardComponent
                   {card}
                   size="small"
@@ -459,7 +495,7 @@
       <!-- Center with battlefield -->
       <div class="center-area">
         <Battlefield
-          cards={$currentPlayer.battlefield}
+          cards={effectivePlayer.battlefield}
           onCardClick={handleCardClick}
           onCardDoubleClick={handleCardDoubleClick}
           onCardContextMenu={handleCardContextMenu}
@@ -470,14 +506,14 @@
       <!-- Right sidebar with graveyard and exile -->
       <div class="right-zones">
         <Graveyard
-          cards={$currentPlayer.graveyard}
+          cards={effectivePlayer.graveyard}
           onCardClick={handleCardClick}
           onCardContextMenu={handleCardContextMenu}
           onCardDrop={handleCardDropOnGraveyard}
         />
 
         <ExilePile
-          cards={$currentPlayer.exile}
+          cards={effectivePlayer.exile}
           onCardClick={handleCardClick}
           onCardContextMenu={handleCardContextMenu}
           onCardDrop={handleCardDropOnExile}
@@ -487,7 +523,7 @@
 
     <!-- Bottom with hand -->
     <Hand
-      cards={$currentPlayer.hand}
+      cards={effectivePlayer.hand}
       onCardClick={handleCardClick}
       onCardDoubleClick={handleCardDoubleClick}
       onCardContextMenu={handleCardContextMenu}
@@ -541,7 +577,7 @@
           <button
             class="menu-item"
             onclick={() => {
-              gameStore.toggleTap(contextMenuCard!.instanceId);
+              act.toggleTap(contextMenuCard!.instanceId);
               closeContextMenu();
             }}
           >
@@ -569,7 +605,7 @@
           <button
             class="menu-item"
             onclick={() => {
-              gameStore.addCounter(contextMenuCard!.instanceId, "+1/+1");
+              act.addCounter(contextMenuCard!.instanceId, "+1/+1");
               closeContextMenu();
             }}
           >
@@ -603,10 +639,10 @@
     {/if}
 
     <!-- Mana Payment Modal (for casting spells) -->
-    {#if showPaymentModal && paymentModalCard && $currentPlayer}
+    {#if showPaymentModal && paymentModalCard && effectivePlayer}
       <ManaPaymentModal
         card={paymentModalCard}
-        manaPool={$currentPlayer.manaPool}
+        manaPool={effectivePlayer.manaPool}
         onConfirm={handlePaymentConfirm}
         onCancel={closePaymentModal}
       />

@@ -30,6 +30,7 @@
     { id: 'home', label: 'Home', icon: '⌂' },
     { id: 'explorer', label: 'Card Explorer', icon: '◎' },
     { id: 'training', label: 'Training', icon: '◈' },
+    { id: 'play', label: 'Play', icon: '⚔' },
   ];
 
   function toggleFolder(folderId: string): void {

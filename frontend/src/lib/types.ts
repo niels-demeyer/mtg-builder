@@ -342,3 +342,98 @@ export interface GameStoreState {
   isLoading: boolean;
   error: string | null;
 }
+
+// ============================================
+// Multiplayer Game Types
+// ============================================
+
+export interface MultiplayerGameState {
+  id: string;
+  game_code: string;
+  format: DeckFormat;
+  players: PlayerState[];
+  active_player_id: string;
+  turn_number: number;
+  phase: GamePhase;
+  turn_order: string[];
+  started: boolean;
+  history: GameAction[];
+}
+
+export interface LobbyPlayer {
+  id: string;
+  username: string;
+  deck_name: string;
+  ready: boolean;
+}
+
+// Redacted player state for opponents (hidden zones replaced with counts)
+export interface OpponentPlayerState extends Omit<PlayerState, 'library' | 'hand'> {
+  library_count: number;
+  hand_count: number;
+  library: GameCard[];   // empty array for opponents
+  hand: GameCard[];      // empty array for opponents
+}
+
+// Action interface for GameBoard dual-mode support
+export interface GameBoardActions {
+  drawCard: () => void;
+  moveCard: (instanceId: string, toZone: GameZone) => void;
+  playCard: (instanceId: string) => void;
+  playCardWithMana: (instanceId: string, genericAllocation?: Partial<ManaPool>) => { success: boolean; error?: string };
+  toggleTap: (instanceId: string) => void;
+  tapLandForMana: (instanceId: string, color: string) => void;
+  untapAll: () => void;
+  nextTurn: () => void;
+  setPhase: (phase: GamePhase) => void;
+  updateLife: (change: number) => void;
+  addCounter: (instanceId: string, counterType: string) => void;
+  removeCounter: (instanceId: string, counterType: string) => void;
+  shuffleLibrary: () => void;
+  mill: (count: number) => void;
+  discardCard: (instanceId: string) => void;
+  addMana: (color: string, amount?: number) => void;
+  removeMana: (color: string, amount?: number) => void;
+  clearManaPool: () => void;
+  selectCard: (card: GameCard | null) => void;
+}
+
+// Effective game info for GameBoard (abstracted from single/multiplayer)
+export interface GameBoardInfo {
+  turnNumber: number;
+  phase: GamePhase;
+  deckName: string;
+  format: string;
+  started: boolean;
+}
+
+// Multiplayer store state
+export interface MultiplayerStoreState {
+  connectionStatus: "disconnected" | "connecting" | "connected" | "error";
+  gameCode: string | null;
+  lobbyPlayers: LobbyPlayer[];
+  isHost: boolean;
+  game: MultiplayerGameState | null;
+  myPlayerId: string | null;
+  selectedCard: GameCard | null;
+  error: string | null;
+  actionError: string | null;
+}
+
+// WebSocket message types
+export type ClientMessageType =
+  | "create_game"
+  | "join_game"
+  | "leave_game"
+  | "game_action";
+
+export type ServerMessageType =
+  | "game_created"
+  | "player_joined"
+  | "player_left"
+  | "game_started"
+  | "game_state_update"
+  | "action_rejected"
+  | "game_over"
+  | "error"
+  | "left_game";

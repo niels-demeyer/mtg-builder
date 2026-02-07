@@ -9,10 +9,13 @@ from app.controllers.auth import AuthController
 from app.controllers.deck import DeckController
 from app.controllers.card import CardController
 from app.controllers.health import HealthController
+from app.controllers.game import GameRoomManager, GameActionHandler
 
 __all__ = [
     "AuthController",
     "DeckController",
     "CardController",
     "HealthController",
+    "GameRoomManager",
+    "GameActionHandler",
 ]

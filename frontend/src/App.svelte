@@ -8,12 +8,13 @@
   import DeckBuilder from './lib/components/DeckBuilder.svelte';
   import CardExplorer from './lib/components/CardExplorer.svelte';
   import Training from './lib/components/Training.svelte';
+  import Play from './lib/components/Play.svelte';
   import NewDeckModal from './lib/components/NewDeckModal.svelte';
   import Login from './lib/components/Login.svelte';
   import Register from './lib/components/Register.svelte';
   import type { Deck } from './lib/types';
 
-  type ViewType = 'home' | 'decks' | 'builder' | 'explorer' | 'training' | 'settings' | 'collection' | 'import-export' | 'login' | 'register';
+  type ViewType = 'home' | 'decks' | 'builder' | 'explorer' | 'training' | 'play' | 'settings' | 'collection' | 'import-export' | 'login' | 'register';
 
   const routes: Record<string, ViewType> = {
     '/': 'home',
@@ -22,6 +23,7 @@
     '/decks/builder': 'builder',
     '/explorer': 'explorer',
     '/training': 'training',
+    '/play': 'play',
     '/settings': 'settings',
     '/collection': 'collection',
     '/import-export': 'import-export',
@@ -89,6 +91,8 @@
       navigateTo('/explorer');
     } else if (view === 'training') {
       navigateTo('/training');
+    } else if (view === 'play') {
+      navigateTo('/play');
     } else if (view === 'settings') {
       navigateTo('/settings');
     } else if (view === 'collection') {
@@ -165,6 +169,8 @@
         <CardExplorer />
       {:else if currentView === 'training'}
         <Training />
+      {:else if currentView === 'play'}
+        <Play />
       {:else if currentView === 'settings'}
         <div class="placeholder-view">
           <h2>Settings</h2>

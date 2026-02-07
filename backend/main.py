@@ -20,7 +20,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 # Import routers
-from app.routers import auth_router, deck_router, card_router, health_router
+from app.routers import auth_router, deck_router, card_router, health_router, game_router
+from app.controllers.game import GameRoomManager
 
 load_dotenv()
 
@@ -55,6 +56,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     engine = create_async_engine(sqlalchemy_dsn, echo=False)
     app.state.async_session = async_sessionmaker(engine, expire_on_commit=False)
 
+    # Initialize game room manager
+    app.state.game_manager = GameRoomManager()
+
     yield
 
     # Shutdown: close the connection pool and SQLAlchemy engine
@@ -88,6 +92,7 @@ app.include_router(health_router, prefix="/api/v1", tags=["Health"])
 app.include_router(auth_router, prefix="/api/v1", tags=["Auth"])
 app.include_router(deck_router, prefix="/api/v1", tags=["Decks"])
 app.include_router(card_router, prefix="/api/v1", tags=["Cards"])
+app.include_router(game_router, prefix="/api/v1", tags=["Game"])
 
 
 if __name__ == "__main__":
