@@ -121,8 +121,11 @@
     gap: 0.75rem;
     padding: 0.75rem;
     overflow-x: auto;
+    overflow-y: auto;
     flex-shrink: 0;
-    max-height: 180px;
+    height: 30vh;
+    min-height: 160px;
+    max-height: 35vh;
   }
 
   .turn-bar {

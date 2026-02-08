@@ -210,7 +210,7 @@ async def game_websocket(websocket: WebSocket, token: str = Query(...)):
                 current_game_code = game_code
                 manager.register_connection(game_code, user_id, websocket)
 
-                # Notify all players
+                # Notify all players with lobby info
                 await manager.broadcast_message(game_code, {
                     "type": "player_joined",
                     "player_id": user_id,
@@ -218,11 +218,9 @@ async def game_websocket(websocket: WebSocket, token: str = Query(...)):
                     "players": room.lobby_dict()["players"],
                 })
 
-                # Send full state to the joining player
-                await websocket.send_json({
-                    "type": "game_state_update",
-                    "game_state": room.to_dict(viewer_id=user_id),
-                })
+                # Broadcast full game state to ALL players so everyone has
+                # the current player list (not just lobby info)
+                await manager.broadcast_state(game_code)
 
             elif msg_type == "leave_game":
                 if current_game_code:

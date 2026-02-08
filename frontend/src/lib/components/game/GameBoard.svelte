@@ -27,13 +27,13 @@
   let { showControls = true, showPhases = true, player: playerProp, gameInfo: gameInfoProp, actions: actionsProp }: Props = $props();
 
   // Dual-mode: use props if provided, otherwise fall back to local gameStore
-  const effectivePlayer = $derived(playerProp ?? effectivePlayer);
+  const effectivePlayer = $derived(playerProp ?? $currentPlayer);
   const effectiveGame = $derived(gameInfoProp ?? ($currentGame ? {
-    turnNumber: effectiveGame.turnNumber,
-    phase: effectiveGame.phase,
-    deckName: effectiveGame.deckName,
-    format: effectiveGame.format,
-    started: effectiveGame.started,
+    turnNumber: $currentGame.turnNumber,
+    phase: $currentGame.phase,
+    deckName: $currentGame.deckName,
+    format: $currentGame.format,
+    started: $currentGame.started,
   } : null));
 
   // Action adapter: use multiplayer actions or local gameStore
@@ -42,9 +42,9 @@
     moveCard: (id: string, zone: GameZone) => gameStore.moveCard(id, zone),
     playCard: (id: string) => gameStore.playCard(id),
     toggleTap: (id: string) => gameStore.toggleTap(id),
-    tapLandForMana: (id: string, color: string) => gameStore.tapLandForMana(id, color as ManaColor),
+    tapForMana: (id: string, color: string) => gameStore.tapForMana(id, color as ManaColor),
     untapAll: () => gameStore.untapAll(),
-    nextTurn: () => { gameStore.untapAll(); gameStore.clearManaPool(); gameStore.nextTurn(); gameStore.drawCard(); },
+    nextTurn: () => { gameStore.untapAll(); gameStore.clearManaPool(); gameStore.nextTurn(); },
     setPhase: (phase: GamePhase) => gameStore.setPhase(phase),
     updateLife: (change: number) => gameStore.updateLife(change),
     addCounter: (id: string, type: string) => gameStore.addCounter(id, type),
@@ -124,7 +124,7 @@
 
   function selectManaColor(color: ManaColor) {
     if (manaModalCard) {
-      act.tapLandForMana(manaModalCard.instanceId, color);
+      act.tapForMana(manaModalCard.instanceId, color);
     }
     closeManaModal();
   }
@@ -169,7 +169,7 @@
 
   function handleTapForMana(color: ManaColor) {
     if (contextMenuCard) {
-      act.tapLandForMana(contextMenuCard.instanceId, color);
+      act.tapForMana(contextMenuCard.instanceId, color);
     }
     closeContextMenu();
   }
@@ -740,13 +740,18 @@
   .right-zones {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.75rem;
     flex-shrink: 0;
+    overflow-y: auto;
+    min-height: 0;
   }
 
   .center-area {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
 
   .command-zone {

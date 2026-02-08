@@ -26,6 +26,9 @@
   }: Props = $props();
 
   let isHovered = $state(false);
+  let previewX = $state(0);
+  let previewY = $state(0);
+  let previewPosition = $state<"above" | "below">("above");
 
   const sizeClasses = {
     small: "card-small",
@@ -60,6 +63,39 @@
     ondragend?.(card, event);
   }
 
+  function handleMouseEnter(event: MouseEvent) {
+    isHovered = true;
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    previewX = rect.left + rect.width / 2;
+    const screenMiddleY = window.innerHeight / 2;
+    if (rect.top < screenMiddleY) {
+      previewPosition = "below";
+      previewY = rect.bottom + 12;
+    } else {
+      previewPosition = "above";
+      previewY = rect.top - 12;
+    }
+  }
+
+  function handleMouseLeave() {
+    isHovered = false;
+  }
+
+  // Keep preview in viewport bounds
+  const previewStyle = $derived.by(() => {
+    const previewWidth = 240;
+    const padding = 16;
+    const maxX = window.innerWidth - previewWidth / 2 - padding;
+    const minX = previewWidth / 2 + padding;
+    const clampedX = Math.max(minX, Math.min(maxX, previewX));
+
+    if (previewPosition === "below") {
+      return `left: ${clampedX}px; top: ${previewY}px; transform: translateX(-50%);`;
+    } else {
+      return `left: ${clampedX}px; top: ${previewY}px; transform: translateX(-50%) translateY(-100%);`;
+    }
+  });
+
   // Get counter display
   const countersDisplay = $derived(
     Object.entries(card.counters)
@@ -68,13 +104,25 @@
   );
 
   const hasCounters = $derived(countersDisplay.length > 0);
+
+  const showPreview = $derived(isHovered && !card.faceDown && !!card.image_uri);
+
+  // Portal action: moves element to document.body to escape CSS containing blocks
+  // (transforms on ancestors break position:fixed)
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
 </script>
 
 <div
   class="game-card {sizeClasses[size]}"
   class:tapped={card.isTapped}
   class:face-down={card.faceDown}
-  class:hovered={isHovered}
   {draggable}
   role="button"
   tabindex="0"
@@ -83,8 +131,8 @@
   oncontextmenu={handleContextMenu}
   ondragstart={handleDragStart}
   ondragend={handleDragEnd}
-  onmouseenter={() => (isHovered = true)}
-  onmouseleave={() => (isHovered = false)}
+  onmouseenter={handleMouseEnter}
+  onmouseleave={handleMouseLeave}
   onkeydown={(e) => e.key === "Enter" && handleClick()}
 >
   {#if card.faceDown}
@@ -116,6 +164,16 @@
   {/if}
 </div>
 
+{#if showPreview}
+  <div class="hover-preview" style={previewStyle} use:portal>
+    <img
+      src={card.image_uri}
+      alt={card.name}
+      class="preview-image"
+    />
+  </div>
+{/if}
+
 <style>
   .game-card {
     position: relative;
@@ -129,8 +187,7 @@
   }
 
   .game-card:hover {
-    z-index: 10;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 0 0 2px hsl(var(--primary) / 0.5);
   }
 
   .game-card:focus-visible {
@@ -236,5 +293,22 @@
 
   [draggable="true"]:active {
     cursor: grabbing;
+  }
+
+  /* Hover Preview - :global because portal moves element to document.body */
+  :global(.hover-preview) {
+    position: fixed;
+    z-index: 1000;
+    pointer-events: none;
+  }
+
+  :global(.preview-image) {
+    width: 240px;
+    height: auto;
+    border-radius: 12px;
+    box-shadow:
+      0 0 0 2px hsl(var(--border)),
+      0 20px 60px rgba(0, 0, 0, 0.5),
+      0 0 40px rgba(0, 0, 0, 0.3);
   }
 </style>

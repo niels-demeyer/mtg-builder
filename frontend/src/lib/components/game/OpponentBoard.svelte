@@ -98,8 +98,9 @@
     border: 1px solid hsl(var(--border));
     border-radius: var(--radius-lg);
     padding: 0.75rem;
-    min-width: 250px;
+    min-width: 300px;
     flex: 1;
+    overflow-y: auto;
   }
 
   .opponent-board.active-turn {

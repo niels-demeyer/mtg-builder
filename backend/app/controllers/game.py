@@ -173,7 +173,7 @@ class GameActionHandler:
         return False, "Card not found on battlefield"
 
     @staticmethod
-    def tap_land_for_mana(
+    def tap_for_mana(
         player: PlayerGameState, instance_id: str, color: ManaColor
     ) -> tuple[bool, Optional[str]]:
         for card in player.battlefield:
@@ -456,7 +456,7 @@ class GameRoomManager:
             "tap_card": lambda: GameActionHandler.tap_card(
                 player, action.get("instance_id", "")
             ),
-            "tap_land_for_mana": lambda: GameActionHandler.tap_land_for_mana(
+            "tap_for_mana": lambda: GameActionHandler.tap_for_mana(
                 player, action.get("instance_id", ""), action.get("color", "C")
             ),
             "untap_all": lambda: GameActionHandler.untap_all(player),
@@ -542,11 +542,6 @@ class GameRoomManager:
         room.active_player_id = room.turn_order[next_idx]
         room.turn_number += 1
         room.phase = GamePhase.UNTAP
-
-        # Draw card for new active player
-        new_active = room.players.get(room.active_player_id)
-        if new_active:
-            GameActionHandler.draw_card(new_active)
 
         return True, None
 

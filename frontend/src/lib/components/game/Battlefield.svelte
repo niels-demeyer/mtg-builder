@@ -24,50 +24,6 @@
 
   let isDragOver = $state(false);
 
-  // Hover preview state
-  let hoveredCard = $state<GameCard | null>(null);
-  let previewX = $state(0);
-  let previewY = $state(0);
-  let previewPosition = $state<"above" | "below">("above");
-
-  function handleCardHover(card: GameCard, event: MouseEvent) {
-    hoveredCard = card;
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    // Center horizontally above/below the card
-    previewX = rect.left + rect.width / 2;
-    // Determine if preview should be above or below
-    const screenMiddleY = window.innerHeight / 2;
-    if (rect.top < screenMiddleY) {
-      // Card is in upper half, show preview below
-      previewPosition = "below";
-      previewY = rect.bottom + 12;
-    } else {
-      // Card is in lower half, show preview above
-      previewPosition = "above";
-      previewY = rect.top - 12;
-    }
-  }
-
-  function handleCardLeave() {
-    hoveredCard = null;
-  }
-
-  // Calculate preview style (keeping it in viewport bounds)
-  const previewStyle = $derived.by(() => {
-    const previewWidth = 240;
-    const previewHeight = 335; // approximate height for card aspect ratio
-    const padding = 16;
-    const maxX = window.innerWidth - previewWidth / 2 - padding;
-    const minX = previewWidth / 2 + padding;
-    const clampedX = Math.max(minX, Math.min(maxX, previewX));
-
-    if (previewPosition === "below") {
-      return `left: ${clampedX}px; top: ${previewY}px; transform: translateX(-50%);`;
-    } else {
-      return `left: ${clampedX}px; top: ${previewY}px; transform: translateX(-50%) translateY(-100%);`;
-    }
-  });
-
   // Group cards by type
   const groupedCards = $derived.by(() => {
     if (!groupByType) {
@@ -151,20 +107,14 @@
           <div class="group-label">{group}</div>
           <div class="group-cards">
             {#each groupCards as card (card.instanceId)}
-              <div
-                class="card-wrapper"
-                onmouseenter={(e) => handleCardHover(card, e)}
-                onmouseleave={handleCardLeave}
-              >
-                <GameCardComponent
-                  {card}
-                  size="small"
-                  onclick={onCardClick}
-                  ondblclick={onCardDoubleClick}
-                  oncontextmenu={onCardContextMenu}
-                  ondragstart={onCardDragStart}
-                />
-              </div>
+              <GameCardComponent
+                {card}
+                size="small"
+                onclick={onCardClick}
+                ondblclick={onCardDoubleClick}
+                oncontextmenu={onCardContextMenu}
+                ondragstart={onCardDragStart}
+              />
             {/each}
           </div>
         </div>
@@ -172,29 +122,19 @@
     {/if}
   </div>
 
-  <!-- Hover Preview -->
-  {#if hoveredCard}
-    <div class="hover-preview" style={previewStyle}>
-      <img
-        src={hoveredCard.image_uri || "/card-placeholder.png"}
-        alt={hoveredCard.name}
-        class="preview-image"
-      />
-    </div>
-  {/if}
 </div>
 
 <style>
   .battlefield-zone {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem;
+    gap: 0.5rem;
+    padding: 0.75rem;
     background: hsl(var(--card));
     border: 2px solid hsl(var(--border));
     border-radius: var(--radius-lg);
-    min-height: 300px;
     flex: 1;
+    min-height: 0;
     transition: all var(--transition-fast);
   }
 
@@ -207,12 +147,13 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding-bottom: 0.5rem;
+    padding-bottom: 0.375rem;
     border-bottom: 1px solid hsl(var(--border));
+    flex-shrink: 0;
   }
 
   .label {
-    font-size: 0.875rem;
+    font-size: 0.8rem;
     font-weight: 600;
     color: hsl(var(--foreground));
     text-transform: uppercase;
@@ -220,16 +161,17 @@
   }
 
   .count {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: hsl(var(--muted-foreground));
   }
 
   .battlefield-content {
     display: flex;
-    flex-direction: column;
-    gap: 1rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
     flex: 1;
     overflow-y: auto;
+    align-content: flex-start;
   }
 
   .empty-battlefield {
@@ -237,22 +179,22 @@
     align-items: center;
     justify-content: center;
     flex: 1;
-    min-height: 200px;
+    min-height: 80px;
     border: 2px dashed hsl(var(--border));
     border-radius: var(--radius-md);
     color: hsl(var(--muted-foreground));
-    font-size: 0.875rem;
+    font-size: 0.8rem;
   }
 
   .card-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.25rem;
   }
 
   .group-label {
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: 0.625rem;
+    font-weight: 600;
     color: hsl(var(--muted-foreground));
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -261,37 +203,7 @@
   .group-cards {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 0.25rem;
   }
 
-  .card-wrapper {
-    position: relative;
-  }
-
-  /* Hover Preview - Large card displayed above/below battlefield cards */
-  .hover-preview {
-    position: fixed;
-    z-index: 1000;
-    pointer-events: none;
-    animation: previewFadeIn 0.1s ease-out;
-  }
-
-  @keyframes previewFadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  .preview-image {
-    width: 240px;
-    height: auto;
-    border-radius: 12px;
-    box-shadow:
-      0 0 0 2px hsl(var(--border)),
-      0 20px 60px rgba(0, 0, 0, 0.5),
-      0 0 40px rgba(0, 0, 0, 0.3);
-  }
 </style>

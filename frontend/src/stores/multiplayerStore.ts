@@ -224,11 +224,11 @@ function createMultiplayerStore() {
       });
     },
 
-    tapLandForMana(instanceId: string, color: ManaColor): void {
+    tapForMana(instanceId: string, color: ManaColor): void {
       wsClient?.send({
         type: "game_action",
         action: {
-          action: "tap_land_for_mana",
+          action: "tap_for_mana",
           instance_id: instanceId,
           color,
         },
@@ -355,8 +355,8 @@ function createMultiplayerStore() {
         moveCard: (id: string, zone: GameZone) => this.moveCard(id, zone),
         playCard: (id: string) => this.playCard(id),
         toggleTap: (id: string) => this.toggleTap(id),
-        tapLandForMana: (id: string, color: string) =>
-          this.tapLandForMana(id, color as ManaColor),
+        tapForMana: (id: string, color: string) =>
+          this.tapForMana(id, color as ManaColor),
         untapAll: () => this.untapAll(),
         nextTurn: () => this.nextTurn(),
         setPhase: (phase: GamePhase) => this.setPhase(phase),

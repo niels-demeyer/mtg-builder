@@ -783,8 +783,8 @@ function createGameStore() {
       });
     },
 
-    // Tap a land and add mana
-    tapLandForMana(instanceId: string, color: ManaColor): void {
+    // Tap a permanent and add mana
+    tapForMana(instanceId: string, color: ManaColor): void {
       update((state) => {
         if (!state.game) return state;
 

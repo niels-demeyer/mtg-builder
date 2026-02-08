@@ -10,6 +10,7 @@
     onCardDragStart?: (card: GameCard, event: DragEvent) => void;
     onCardDragEnd?: (card: GameCard, event: DragEvent) => void;
     maxSpread?: number;
+    collapsed?: boolean;
   }
 
   let {
@@ -20,32 +21,10 @@
     onCardDragStart,
     onCardDragEnd,
     maxSpread = 40,
+    collapsed = false,
   }: Props = $props();
 
-  // Hover preview state
-  let hoveredCard = $state<GameCard | null>(null);
-  let previewX = $state(0);
-
-  function handleCardHover(card: GameCard, event: MouseEvent) {
-    hoveredCard = card;
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    // Center the preview above the card
-    previewX = rect.left + rect.width / 2;
-  }
-
-  function handleCardLeave() {
-    hoveredCard = null;
-  }
-
-  // Calculate preview horizontal position (keeping it in viewport bounds)
-  const previewStyle = $derived.by(() => {
-    const previewWidth = 280;
-    const padding = 16;
-    const maxX = window.innerWidth - previewWidth / 2 - padding;
-    const minX = previewWidth / 2 + padding;
-    const clampedX = Math.max(minX, Math.min(maxX, previewX));
-    return `left: ${clampedX}px; transform: translateX(-50%);`;
-  });
+  let isCollapsed = $state(collapsed);
 
   // Calculate card positions in a fan layout
   function getCardStyle(index: number, total: number): string {
@@ -64,46 +43,36 @@
 
 </script>
 
-<div class="hand-zone">
-  <div class="hand-label">
+<div class="hand-zone" class:collapsed={isCollapsed}>
+  <button class="hand-label" onclick={() => (isCollapsed = !isCollapsed)}>
     <span class="label">Hand</span>
     <span class="count">({cards.length})</span>
-  </div>
+    <span class="toggle-icon">{isCollapsed ? "\u25B2" : "\u25BC"}</span>
+  </button>
 
-  <div class="hand-cards" class:empty={cards.length === 0}>
-    {#if cards.length === 0}
-      <div class="empty-hand">No cards in hand</div>
-    {:else}
-      {#each cards as card, index (card.instanceId)}
-        <div
-          class="hand-card"
-          style={getCardStyle(index, cards.length)}
-          onmouseenter={(e) => handleCardHover(card, e)}
-          onmouseleave={handleCardLeave}
-          role="listitem"
-        >
-          <GameCardComponent
-            {card}
-            size="medium"
-            onclick={onCardClick}
-            ondblclick={onCardDoubleClick}
-            oncontextmenu={onCardContextMenu}
-            ondragstart={onCardDragStart}
-            ondragend={onCardDragEnd}
-          />
-        </div>
-      {/each}
-    {/if}
-  </div>
-
-  <!-- Hover Preview - Large card image above the hand -->
-  {#if hoveredCard}
-    <div class="hover-preview" style={previewStyle}>
-      <img
-        src={hoveredCard.image_uri || "/card-placeholder.png"}
-        alt={hoveredCard.name}
-        class="preview-image"
-      />
+  {#if !isCollapsed}
+    <div class="hand-cards" class:empty={cards.length === 0}>
+      {#if cards.length === 0}
+        <div class="empty-hand">No cards in hand</div>
+      {:else}
+        {#each cards as card, index (card.instanceId)}
+          <div
+            class="hand-card"
+            style={getCardStyle(index, cards.length)}
+            role="listitem"
+          >
+            <GameCardComponent
+              {card}
+              size="medium"
+              onclick={onCardClick}
+              ondblclick={onCardDoubleClick}
+              oncontextmenu={onCardContextMenu}
+              ondragstart={onCardDragStart}
+              ondragend={onCardDragEnd}
+            />
+          </div>
+        {/each}
+      {/if}
     </div>
   {/if}
 </div>
@@ -118,7 +87,11 @@
     background: hsl(var(--card));
     border: 2px solid hsl(var(--border));
     border-radius: var(--radius-lg);
-    min-height: 220px;
+    flex-shrink: 0;
+  }
+
+  .hand-zone.collapsed {
+    padding: 0.5rem 1rem;
   }
 
   .hand-label {
@@ -127,6 +100,29 @@
     gap: 0.5rem;
     padding-bottom: 0.5rem;
     border-bottom: 1px solid hsl(var(--border));
+    background: none;
+    border-left: none;
+    border-right: none;
+    border-top: none;
+    cursor: pointer;
+    width: 100%;
+    transition: color var(--transition-fast);
+  }
+
+  .hand-label:hover .label,
+  .hand-label:hover .count {
+    color: hsl(var(--primary));
+  }
+
+  .collapsed .hand-label {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  .toggle-icon {
+    margin-left: auto;
+    font-size: 0.625rem;
+    color: hsl(var(--muted-foreground));
   }
 
   .label {
@@ -183,43 +179,4 @@
     font-style: italic;
   }
 
-  /* Hover Preview - Large card displayed above the hand */
-  .hover-preview {
-    position: fixed;
-    bottom: 240px;
-    z-index: 1000;
-    pointer-events: none;
-    animation: previewFadeIn 0.1s ease-out;
-  }
-
-  @keyframes previewFadeIn {
-    from {
-      opacity: 0;
-      transform: translateX(-50%) translateY(10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-  }
-
-  .preview-image {
-    width: 280px;
-    height: auto;
-    border-radius: 12px;
-    box-shadow:
-      0 0 0 2px hsl(var(--border)),
-      0 20px 60px rgba(0, 0, 0, 0.5),
-      0 0 40px rgba(0, 0, 0, 0.3);
-  }
-
-  @media (max-width: 768px) {
-    .hover-preview {
-      bottom: 260px;
-    }
-
-    .preview-image {
-      width: 220px;
-    }
-  }
 </style>

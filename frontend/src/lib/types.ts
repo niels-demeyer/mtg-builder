@@ -381,7 +381,7 @@ export interface GameBoardActions {
   moveCard: (instanceId: string, toZone: GameZone) => void;
   playCard: (instanceId: string) => void;
   toggleTap: (instanceId: string) => void;
-  tapLandForMana: (instanceId: string, color: string) => void;
+  tapForMana: (instanceId: string, color: string) => void;
   untapAll: () => void;
   nextTurn: () => void;
   setPhase: (phase: GamePhase) => void;
