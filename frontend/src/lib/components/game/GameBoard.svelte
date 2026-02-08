@@ -4,11 +4,7 @@
     gameStore,
     currentGame,
     currentPlayer,
-    detectLandMana,
-    parseManaCost,
-    canPayManaCost,
     type ManaColor,
-    type ParsedManaCost,
   } from "../../../stores/gameStore";
   import Library from "./Library.svelte";
   import Hand from "./Hand.svelte";
@@ -16,7 +12,6 @@
   import Graveyard from "./Graveyard.svelte";
   import ExilePile from "./ExilePile.svelte";
   import GameCardComponent from "./GameCard.svelte";
-  import ManaPaymentModal from "./ManaPaymentModal.svelte";
 
   interface Props {
     showControls?: boolean;
@@ -46,7 +41,6 @@
     drawCard: () => gameStore.drawCard(),
     moveCard: (id: string, zone: GameZone) => gameStore.moveCard(id, zone),
     playCard: (id: string) => gameStore.playCard(id),
-    playCardWithMana: (id: string, alloc?: Partial<ManaPool>) => gameStore.playCardWithMana(id, alloc),
     toggleTap: (id: string) => gameStore.toggleTap(id),
     tapLandForMana: (id: string, color: string) => gameStore.tapLandForMana(id, color as ManaColor),
     untapAll: () => gameStore.untapAll(),
@@ -73,11 +67,6 @@
   let showManaModal = $state(false);
   let manaModalCard = $state<GameCard | null>(null);
   let manaModalColors = $state<ManaColor[]>([]);
-
-  // Mana payment modal state (for playing cards)
-  let showPaymentModal = $state(false);
-  let paymentModalCard = $state<GameCard | null>(null);
-  let paymentError = $state<string | null>(null);
 
   // Phase labels for display
   const phaseLabels: Record<GamePhase, string> = {
@@ -122,32 +111,13 @@
     if (card.zone === "hand") {
       tryPlayCard(card);
     } else if (card.zone === "battlefield") {
-      const typeLine = card.type_line.toLowerCase();
-
-      // Check if it's a land
-      if (typeLine.includes("land")) {
-        if (card.isTapped) {
-          // Already tapped, just untap
-          act.toggleTap(card.instanceId);
-        } else {
-          // Tap for mana
-          const colors = detectLandMana(card);
-          if (colors.length === 1) {
-            // Single color, tap directly
-            act.tapLandForMana(card.instanceId, colors[0]);
-          } else if (colors.length > 1) {
-            // Multiple colors, show modal
-            manaModalCard = card;
-            manaModalColors = colors;
-            showManaModal = true;
-          } else {
-            // Unknown, just tap without adding mana
-            act.toggleTap(card.instanceId);
-          }
-        }
-      } else {
-        // Non-land, just tap/untap
+      if (card.isTapped) {
         act.toggleTap(card.instanceId);
+      } else {
+        // Show mana color selection modal for any untapped permanent
+        manaModalCard = card;
+        manaModalColors = ["W", "U", "B", "R", "G", "C"];
+        showManaModal = true;
       }
     }
   }
@@ -165,109 +135,8 @@
     manaModalColors = [];
   }
 
-  // Try to play a card from hand, handling mana payment
   function tryPlayCard(card: GameCard) {
-    const isLand = card.type_line.toLowerCase().includes("land");
-
-    // Lands are free to play
-    if (isLand) {
-      act.playCard(card.instanceId);
-      return;
-    }
-
-    // Free spells (0 mana cost)
-    const cost = parseManaCost(card.mana_cost);
-    if (cost.total === 0) {
-      act.playCard(card.instanceId);
-      return;
-    }
-
-    // Use the reusable payment initiation
-    initiatePayment(card);
-  }
-
-  // Handle mana payment confirmation from modal
-  function handlePaymentConfirm(genericAllocation: Partial<ManaPool>) {
-    if (!paymentModalCard) return;
-
-    const result = act.playCardWithMana(
-      paymentModalCard.instanceId,
-      genericAllocation
-    );
-
-    if (!result.success) {
-      paymentError = result.error || "Failed to play card";
-      setTimeout(() => { paymentError = null; }, 2000);
-    }
-
-    closePaymentModal();
-  }
-
-  function closePaymentModal() {
-    showPaymentModal = false;
-    paymentModalCard = null;
-  }
-
-  // Check if a card requires mana payment (not a land and has a cost)
-  function requiresManaPayment(card: GameCard): boolean {
-    const isLand = card.type_line.toLowerCase().includes("land");
-    if (isLand) return false;
-    const cost = parseManaCost(card.mana_cost);
-    return cost.total > 0;
-  }
-
-  // Initiate mana payment for a card (shows modal or auto-pays)
-  function initiatePayment(card: GameCard) {
-    if (!effectivePlayer) return;
-
-    const cost = parseManaCost(card.mana_cost);
-
-    // Check if we can afford it
-    if (!canPayManaCost(effectivePlayer.manaPool, cost)) {
-      paymentError = "Not enough mana to cast this spell";
-      setTimeout(() => { paymentError = null; }, 2000);
-      return;
-    }
-
-    // If no generic mana, or exact mana available, we can auto-pay
-    if (cost.generic === 0) {
-      const result = act.playCardWithMana(card.instanceId);
-      if (!result.success) {
-        paymentError = result.error || "Failed to play card";
-        setTimeout(() => { paymentError = null; }, 2000);
-      }
-      return;
-    }
-
-    // Calculate available mana after paying colored costs
-    const pool = effectivePlayer.manaPool;
-    const remainingPool: ManaPool = {
-      W: pool.W - cost.W,
-      U: pool.U - cost.U,
-      B: pool.B - cost.B,
-      R: pool.R - cost.R,
-      G: pool.G - cost.G,
-      C: pool.C - cost.C,
-    };
-
-    // Count how many colors have remaining mana
-    const colorsWithMana = (["W", "U", "B", "R", "G", "C"] as ManaColor[])
-      .filter((c) => remainingPool[c] > 0);
-    const totalRemaining = colorsWithMana.reduce((sum, c) => sum + remainingPool[c], 0);
-
-    // If only one color has enough, or total equals generic cost exactly, auto-pay
-    if (totalRemaining === cost.generic || colorsWithMana.length <= 1) {
-      const result = act.playCardWithMana(card.instanceId);
-      if (!result.success) {
-        paymentError = result.error || "Failed to play card";
-        setTimeout(() => { paymentError = null; }, 2000);
-      }
-      return;
-    }
-
-    // Multiple colors available - show modal
-    paymentModalCard = card;
-    showPaymentModal = true;
+    act.playCard(card.instanceId);
   }
 
   function handleCardContextMenu(card: GameCard, event: MouseEvent) {
@@ -287,7 +156,6 @@
       return;
     }
 
-    // If moving from hand to battlefield, trigger mana payment
     if (zone === "battlefield" && contextMenuCard.zone === "hand") {
       const card = contextMenuCard;
       closeContextMenu();
@@ -321,7 +189,6 @@
   function handleCardDropOnBattlefield(card: GameCard) {
     if (card.zone === "battlefield") return;
 
-    // Cards from hand need to pay mana costs (except lands)
     if (card.zone === "hand") {
       tryPlayCard(card);
       return;
@@ -374,10 +241,9 @@
     act.removeMana(color);
   }
 
-  // Get mana colors for context menu if card is a land
-  function getLandManaColors(card: GameCard): ManaColor[] {
-    if (!card.type_line.toLowerCase().includes("land")) return [];
-    return detectLandMana(card);
+  // Get mana colors for context menu tap-for-mana (all colors for any permanent)
+  function getTapManaColors(): ManaColor[] {
+    return ["W", "U", "B", "R", "G", "C"];
   }
 
   // Close context menu when clicking outside
@@ -551,7 +417,7 @@
 
     <!-- Context menu -->
     {#if showContextMenu && contextMenuCard}
-      {@const landColors = getLandManaColors(contextMenuCard)}
+      {@const manaColors = getTapManaColors()}
       <div
         class="context-menu"
         style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
@@ -584,12 +450,12 @@
             {contextMenuCard.isTapped ? "Untap" : "Tap"}
           </button>
 
-          <!-- Land mana tapping options -->
-          {#if landColors.length > 0 && !contextMenuCard.isTapped}
+          <!-- Tap for mana options -->
+          {#if !contextMenuCard.isTapped}
             <div class="menu-divider"></div>
             <div class="menu-label">Tap for Mana</div>
             <div class="mana-options">
-              {#each landColors as color}
+              {#each manaColors as color}
                 <button
                   class="mana-option"
                   style="background: {manaColorInfo[color].bg}; color: {manaColorInfo[color].text};"
@@ -638,22 +504,6 @@
       </div>
     {/if}
 
-    <!-- Mana Payment Modal (for casting spells) -->
-    {#if showPaymentModal && paymentModalCard && effectivePlayer}
-      <ManaPaymentModal
-        card={paymentModalCard}
-        manaPool={effectivePlayer.manaPool}
-        onConfirm={handlePaymentConfirm}
-        onCancel={closePaymentModal}
-      />
-    {/if}
-
-    <!-- Payment Error Toast -->
-    {#if paymentError}
-      <div class="payment-error-toast">
-        {paymentError}
-      </div>
-    {/if}
   </div>
 {:else}
   <div class="no-game">
@@ -1157,33 +1007,7 @@
     color: hsl(var(--foreground));
   }
 
-  /* Payment Error Toast */
-  .payment-error-toast {
-    position: fixed;
-    bottom: 2rem;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 0.75rem 1.5rem;
-    background: hsl(var(--destructive));
-    color: white;
-    border-radius: var(--radius-md);
-    font-size: 0.875rem;
-    font-weight: 500;
-    box-shadow: var(--shadow-lg);
-    z-index: 400;
-    animation: toastIn 0.2s ease-out;
-  }
 
-  @keyframes toastIn {
-    from {
-      opacity: 0;
-      transform: translateX(-50%) translateY(10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-  }
 
   .no-game {
     display: flex;

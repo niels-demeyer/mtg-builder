@@ -24,9 +24,6 @@ from app.models.game import (
     GameAction,
 )
 from app.controllers.mana_utils import (
-    parse_mana_cost,
-    can_pay_mana_cost,
-    pay_mana_cost,
     detect_land_mana,
     ManaColor,
     MANA_COLORS,
@@ -122,7 +119,6 @@ class GameActionHandler:
     def play_card(
         player: PlayerGameState,
         instance_id: str,
-        generic_allocation: Optional[dict[str, int]] = None,
     ) -> tuple[bool, Optional[str]]:
         # Find card in hand
         card = None
@@ -133,32 +129,6 @@ class GameActionHandler:
         if not card:
             return False, "Card not found in hand"
 
-        is_land = "land" in card.type_line.lower()
-
-        if is_land:
-            card.zone = GameZone.BATTLEFIELD
-            card.is_tapped = False
-            player.battlefield.append(card)
-            return True, None
-
-        cost = parse_mana_cost(card.mana_cost)
-        if cost.total == 0:
-            card.zone = GameZone.BATTLEFIELD
-            card.is_tapped = False
-            player.battlefield.append(card)
-            return True, None
-
-        # Try to pay mana
-        success, new_pool, error = pay_mana_cost(
-            player.mana_pool, cost, generic_allocation
-        )
-        if not success:
-            # Put card back in hand
-            card.zone = GameZone.HAND
-            player.hand.append(card)
-            return False, error or "Not enough mana"
-
-        player.mana_pool = new_pool
         card.zone = GameZone.BATTLEFIELD
         card.is_tapped = False
         player.battlefield.append(card)
@@ -209,9 +179,7 @@ class GameActionHandler:
         for card in player.battlefield:
             if card.instance_id == instance_id:
                 if card.is_tapped:
-                    return False, "Land is already tapped"
-                if "land" not in card.type_line.lower():
-                    return False, "Card is not a land"
+                    return False, "Card is already tapped"
                 card.is_tapped = True
                 current = getattr(player.mana_pool, color, 0)
                 setattr(player.mana_pool, color, current + 1)
@@ -476,7 +444,6 @@ class GameRoomManager:
             "play_card": lambda: GameActionHandler.play_card(
                 player,
                 action.get("instance_id", ""),
-                action.get("generic_allocation"),
             ),
             "move_card": lambda: GameActionHandler.move_card(
                 player,

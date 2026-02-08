@@ -380,7 +380,6 @@ export interface GameBoardActions {
   drawCard: () => void;
   moveCard: (instanceId: string, toZone: GameZone) => void;
   playCard: (instanceId: string) => void;
-  playCardWithMana: (instanceId: string, genericAllocation?: Partial<ManaPool>) => { success: boolean; error?: string };
   toggleTap: (instanceId: string) => void;
   tapLandForMana: (instanceId: string, color: string) => void;
   untapAll: () => void;

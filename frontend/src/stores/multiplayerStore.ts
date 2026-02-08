@@ -203,22 +203,6 @@ function createMultiplayerStore() {
       });
     },
 
-    playCardWithMana(
-      instanceId: string,
-      genericAllocation?: Partial<ManaPool>
-    ): { success: boolean; error?: string } {
-      wsClient?.send({
-        type: "game_action",
-        action: {
-          action: "play_card",
-          instance_id: instanceId,
-          generic_allocation: genericAllocation,
-        },
-      });
-      // Server-authoritative: assume success, server will reject if invalid
-      return { success: true };
-    },
-
     moveCard(instanceId: string, toZone: GameZone): void {
       wsClient?.send({
         type: "game_action",
@@ -370,8 +354,6 @@ function createMultiplayerStore() {
         drawCard: () => this.drawCard(),
         moveCard: (id: string, zone: GameZone) => this.moveCard(id, zone),
         playCard: (id: string) => this.playCard(id),
-        playCardWithMana: (id: string, alloc?: Partial<ManaPool>) =>
-          this.playCardWithMana(id, alloc),
         toggleTap: (id: string) => this.toggleTap(id),
         tapLandForMana: (id: string, color: string) =>
           this.tapLandForMana(id, color as ManaColor),
