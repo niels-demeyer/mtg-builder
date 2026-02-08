@@ -118,6 +118,35 @@ impl Database {
         let id = card_json["id"].as_str().unwrap_or_default();
         let raw_json = serde_json::to_string(card_json).unwrap_or_default();
 
+        // For double-faced cards, Scryfall puts mana_cost, oracle_text, etc. in card_faces[0]
+        let front_face = card_json["card_faces"].as_array().and_then(|f| f.first());
+
+        // Helper: get a string field, falling back to front face
+        let get_str = |field: &str| -> Option<&str> {
+            card_json[field]
+                .as_str()
+                .or_else(|| front_face.and_then(|f| f[field].as_str()))
+        };
+
+        // Helper: get colors array, falling back to front face
+        let get_colors = |field: &str| -> Option<String> {
+            json_array_to_string(&card_json[field])
+                .or_else(|| front_face.and_then(|f| json_array_to_string(&f[field])))
+        };
+
+        // For image_uris: use top-level if present, else front face
+        let image_uris_str = if card_json["image_uris"].is_object() {
+            card_json["image_uris"].to_string()
+        } else if let Some(face) = front_face {
+            if face["image_uris"].is_object() {
+                face["image_uris"].to_string()
+            } else {
+                "null".to_string()
+            }
+        } else {
+            "null".to_string()
+        };
+
         sqlx::query(
             r#"
             INSERT INTO cards (
@@ -212,14 +241,14 @@ impl Database {
         .bind(card_json["layout"].as_str())
         .bind(card_json["highres_image"].as_bool())
         .bind(card_json["image_status"].as_str())
-        .bind(card_json["mana_cost"].as_str())
+        .bind(get_str("mana_cost"))
         .bind(card_json["cmc"].as_f64())
         .bind(card_json["type_line"].as_str())
-        .bind(card_json["oracle_text"].as_str())
-        .bind(card_json["power"].as_str())
-        .bind(card_json["toughness"].as_str())
-        .bind(json_array_to_string(&card_json["colors"]))
-        .bind(json_array_to_string(&card_json["color_identity"]))
+        .bind(get_str("oracle_text"))
+        .bind(get_str("power"))
+        .bind(get_str("toughness"))
+        .bind(get_colors("colors"))
+        .bind(get_colors("color_identity"))
         .bind(json_array_to_string(&card_json["keywords"]))
         .bind(card_json["legalities"].to_string())
         .bind(json_array_to_string(&card_json["games"]))
@@ -259,7 +288,7 @@ impl Database {
         .bind(card_json["prices"].to_string())
         .bind(card_json["related_uris"].to_string())
         .bind(card_json["purchase_uris"].to_string())
-        .bind(card_json["image_uris"].to_string())
+        .bind(&image_uris_str)
         .bind(card_json["card_faces"].to_string())
         .bind(card_json["all_parts"].to_string())
         .bind(&raw_json)
