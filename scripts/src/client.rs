@@ -1,4 +1,5 @@
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
+use std::io::Write;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -247,6 +248,148 @@ impl ScryfallClient {
             .iter()
             .map(|q| (*q, self.validator.validate(q)))
             .collect()
+    }
+
+    /// Downloads the complete Scryfall card database via the bulk data API and stores all cards.
+    /// This is significantly faster than paginated search queries and guarantees complete coverage
+    /// of every card (all printings, all layouts, all edge cases).
+    pub async fn download_and_store_bulk(
+        &self,
+        db: &Database,
+    ) -> Result<usize, ScryfallError> {
+        // 1. Fetch bulk data catalog from Scryfall API (rate limited)
+        println!("Fetching bulk data catalog...");
+        let catalog = self
+            .fetch_json_page("https://api.scryfall.com/bulk-data")
+            .await?;
+
+        // 2. Find the default_cards entry (every card printing, excludes extras like tokens/art)
+        let bulk_entry = catalog["data"]
+            .as_array()
+            .and_then(|arr| {
+                arr.iter()
+                    .find(|item| item["type"].as_str() == Some("default_cards"))
+            })
+            .ok_or_else(|| {
+                ScryfallError::DatabaseError(
+                    "Could not find default_cards in bulk data catalog".into(),
+                )
+            })?;
+
+        let download_uri = bulk_entry["download_uri"].as_str().ok_or_else(|| {
+            ScryfallError::DatabaseError("No download_uri in bulk data entry".into())
+        })?;
+        let updated_at = bulk_entry["updated_at"].as_str().unwrap_or("unknown");
+
+        println!("Bulk data last updated: {}", updated_at);
+        println!("Downloading: {}", download_uri);
+
+        // 3. Download with a dedicated client (longer timeout, no rate limiting needed
+        //    since bulk data is served from a CDN on a different domain)
+        let bulk_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(600))
+            .connect_timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|e| ScryfallError::RequestError(Arc::new(e)))?;
+
+        let mut response = bulk_client
+            .get(download_uri)
+            .headers(self.headers.clone())
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let content_length = response.content_length();
+        let mut bytes: Vec<u8> = Vec::new();
+        if let Some(total) = content_length {
+            bytes.reserve(total as usize);
+            println!(
+                "Download size: {:.1} MB",
+                total as f64 / 1_048_576.0
+            );
+        }
+
+        let download_start = Instant::now();
+        let mut downloaded: u64 = 0;
+        let mut last_report = Instant::now();
+
+        while let Some(chunk) = response.chunk().await? {
+            downloaded += chunk.len() as u64;
+            bytes.extend_from_slice(&chunk);
+
+            if last_report.elapsed() > Duration::from_millis(500) {
+                if let Some(total) = content_length {
+                    let pct = (downloaded as f64 / total as f64) * 100.0;
+                    print!(
+                        "\rDownloading: {:.1}/{:.1} MB ({:.1}%)",
+                        downloaded as f64 / 1_048_576.0,
+                        total as f64 / 1_048_576.0,
+                        pct
+                    );
+                } else {
+                    print!(
+                        "\rDownloading: {:.1} MB",
+                        downloaded as f64 / 1_048_576.0
+                    );
+                }
+                std::io::stdout().flush().ok();
+                last_report = Instant::now();
+            }
+        }
+        println!(
+            "\nDownload complete in {:.1}s ({:.1} MB)",
+            download_start.elapsed().as_secs_f64(),
+            downloaded as f64 / 1_048_576.0
+        );
+
+        // 4. Parse the JSON array (all cards in one array)
+        println!("Parsing JSON...");
+        let parse_start = Instant::now();
+        let cards: Vec<serde_json::Value> = serde_json::from_slice(&bytes).map_err(|e| {
+            ScryfallError::DatabaseError(format!("Failed to parse bulk data JSON: {}", e))
+        })?;
+        drop(bytes); // Free download buffer
+        println!(
+            "Parsed {} cards in {:.1}s",
+            cards.len(),
+            parse_start.elapsed().as_secs_f64()
+        );
+
+        // 5. Batch upsert into database (500 cards per transaction)
+        let total = cards.len();
+        let mut stored: usize = 0;
+        let batch_size = 500;
+        let store_start = Instant::now();
+
+        for chunk in cards.chunks(batch_size) {
+            let batch_stored = db
+                .upsert_cards_batch(chunk)
+                .await
+                .map_err(|e| ScryfallError::DatabaseError(e.to_string()))?;
+            stored += batch_stored;
+
+            let elapsed = store_start.elapsed().as_secs_f64();
+            let rate = if elapsed > 0.0 {
+                stored as f64 / elapsed
+            } else {
+                0.0
+            };
+            print!(
+                "\rStoring: {}/{} ({:.1}%) - {:.0} cards/sec",
+                stored,
+                total,
+                (stored as f64 / total as f64) * 100.0,
+                rate
+            );
+            std::io::stdout().flush().ok();
+        }
+        println!(
+            "\nStored {} cards in {:.1}s",
+            stored,
+            store_start.elapsed().as_secs_f64()
+        );
+
+        Ok(stored)
     }
 
     /// Fetch multiple queries concurrently (rate-limited)
