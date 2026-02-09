@@ -11,65 +11,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::new().await?;
     let start = Instant::now();
 
-    // Fetch cards by type to avoid timeout on large queries
-    let card_types = [
-        "artifact",
-        "battle",
-        "conspiracy",
-        "creature",
-        "dungeon",
-        "emblem",
-        "enchantment",
-        "hero",
-        "instant",
-        "kindred",
-        "land",
-        "phenomenon",
-        "plane",
-        "planeswalker",
-        "scheme",
-        "sorcery",
-        "vanguard",
-    ];
+    println!("=== Downloading and storing all cards from Scryfall bulk data ===\n");
 
-    println!("=== Fetching all cards by type and storing to database ===\n");
-
-    let mut grand_total = 0;
-
-    for card_type in &card_types {
-        let query = format!("type:{}", card_type);
-        println!("\n--- Fetching {} cards ---", card_type);
-        println!("Query: {}", query);
-
-        match client.fetch_and_store(&query, &db).await {
-            Ok(stored) => {
-                grand_total += stored;
-                println!("Stored {} {} cards", stored, card_type);
-            }
-            Err(e) => {
-                eprintln!("Error fetching {} cards: {}", card_type, e);
-                eprintln!("Continuing with next type...");
-            }
+    match client.download_and_store_bulk(&db).await {
+        Ok(total_stored) => {
+            println!("\n=== Results ===");
+            println!("Total cards stored: {}", total_stored);
+            println!("Total cards in database: {}", db.get_card_count().await?);
+            println!("Total time: {:.2}s", start.elapsed().as_secs_f64());
         }
-    }
-
-    println!("\n=== Results ===");
-    println!("Total cards stored this run: {}", grand_total);
-    println!("Total cards in database: {}", db.get_card_count().await?);
-    println!("Total time: {:.2}s", start.elapsed().as_secs_f64());
-
-    // Example: search for cards by name
-    println!("\n=== Searching database for 'Lightning' ===");
-    let results = db.search_by_name("Lightning").await?;
-    for card in results.iter().take(5) {
-        println!(
-            "  - {} ({}, {})",
-            card["name"].as_str().unwrap_or("Unknown"),
-            card["set_name"].as_str().unwrap_or("Unknown"),
-            card["rarity"].as_str().unwrap_or("Unknown")
-        );
+        Err(e) => {
+            eprintln!("\nError during bulk import: {}", e);
+            eprintln!("Cards in database so far: {}", db.get_card_count().await?);
+            return Err(e.into());
+        }
     }
 
     Ok(())
 }
-
