@@ -56,3 +56,5 @@ class DbCard:
     image_uris: Optional[ImageUris] = None
     legalities: Optional[Dict[str, str]] = None
     prints_search_uri: Optional[str] = None
+    card_faces: Optional[List[Dict]] = None
+    layout: Optional[str] = None

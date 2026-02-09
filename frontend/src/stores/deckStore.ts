@@ -10,6 +10,7 @@ import type {
   PileSortBy,
   DeckStats,
   DeckFormat,
+  CardFace,
 } from "$lib/types";
 import { apiFetch, API_BASE } from "$lib/api";
 import {
@@ -213,6 +214,7 @@ function createDeckStore() {
       colors?: string[] | null;
       rarity?: string;
       image_uri?: string | null;
+      card_faces?: CardFace[];
       quantity?: number;
       zone?: string;
       tags?: string[];
@@ -235,6 +237,7 @@ function createDeckStore() {
         colors: card.colors || undefined,
         rarity: card.rarity || "common",
         image_uri: card.image_uri || undefined,
+        card_faces: card.card_faces,
         quantity: card.quantity || 1,
         zone: (card.zone || "mainboard") as CardZone,
         tags: card.tags || [],

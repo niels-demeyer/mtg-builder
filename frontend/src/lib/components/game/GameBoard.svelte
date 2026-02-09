@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { GameCard, GameZone, GamePhase, ManaPool, PlayerState, GameBoardActions, GameBoardInfo } from "$lib/types";
+  import { isDFC, getFaceImage, getFaceData } from "$lib/cardUtils";
   import {
     gameStore,
     currentGame,
@@ -59,6 +60,13 @@
   } satisfies GameBoardActions);
 
   let selectedCard = $state<GameCard | null>(null);
+  let selectedCardFlipped = $state(false);
+
+  // Reset flip when selected card changes
+  $effect(() => {
+    if (selectedCard) selectedCardFlipped = false;
+  });
+
   let contextMenuCard = $state<GameCard | null>(null);
   let contextMenuPosition = $state({ x: 0, y: 0 });
   let showContextMenu = $state(false);
@@ -397,19 +405,27 @@
 
     <!-- Card preview panel -->
     {#if selectedCard}
+      {@const previewFaceIdx = selectedCardFlipped ? 1 : 0}
+      {@const previewFace = getFaceData(selectedCard, previewFaceIdx)}
+      {@const previewImage = isDFC(selectedCard) ? getFaceImage(selectedCard, previewFaceIdx) : selectedCard.image_uri}
       <div class="card-preview-panel">
         <button class="close-preview" onclick={() => (selectedCard = null)}>×</button>
         <div class="preview-image">
-          <img src={selectedCard.image_uri} alt={selectedCard.name} />
+          <img src={previewImage} alt={previewFace.name} />
+          {#if isDFC(selectedCard)}
+            <button class="preview-flip-btn" onclick={() => selectedCardFlipped = !selectedCardFlipped} title="Flip card">
+              &#x21BB;
+            </button>
+          {/if}
         </div>
         <div class="preview-info">
-          <h3>{selectedCard.name}</h3>
-          <p class="type-line">{selectedCard.type_line}</p>
-          {#if selectedCard.oracle_text}
-            <p class="oracle-text">{selectedCard.oracle_text}</p>
+          <h3>{previewFace.name}</h3>
+          <p class="type-line">{previewFace.type_line}</p>
+          {#if previewFace.oracle_text}
+            <p class="oracle-text">{previewFace.oracle_text}</p>
           {/if}
-          {#if selectedCard.power && selectedCard.toughness}
-            <p class="pt">{selectedCard.power}/{selectedCard.toughness}</p>
+          {#if previewFace.power && previewFace.toughness}
+            <p class="pt">{previewFace.power}/{previewFace.toughness}</p>
           {/if}
         </div>
       </div>
@@ -439,6 +455,31 @@
           Put on Library (shuffle)
         </button>
         <div class="menu-divider"></div>
+        {#if isDFC(contextMenuCard)}
+          <button
+            class="menu-item"
+            onclick={() => {
+              // Find and visually transform the card (client-side only)
+              const card = contextMenuCard!;
+              if (card.card_faces && card.card_faces.length >= 2) {
+                const currentFaceIdx = card.image_uri === getFaceImage(card, 1) ? 1 : 0;
+                const newFaceIdx = currentFaceIdx === 0 ? 1 : 0;
+                const newFace = card.card_faces[newFaceIdx];
+                card.image_uri = getFaceImage(card, newFaceIdx);
+                card.name = newFace.name || card.name;
+                card.type_line = newFace.type_line || card.type_line;
+                card.oracle_text = newFace.oracle_text;
+                card.mana_cost = newFace.mana_cost;
+                card.power = newFace.power;
+                card.toughness = newFace.toughness;
+              }
+              closeContextMenu();
+            }}
+          >
+            Transform
+          </button>
+          <div class="menu-divider"></div>
+        {/if}
         {#if contextMenuCard.zone === "battlefield"}
           <button
             class="menu-item"
@@ -812,9 +853,37 @@
     color: white;
   }
 
+  .preview-image {
+    position: relative;
+  }
+
   .preview-image img {
     width: 100%;
     display: block;
+  }
+
+  .preview-flip-btn {
+    position: absolute;
+    bottom: 0.5rem;
+    right: 0.5rem;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.75);
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+  }
+
+  .preview-flip-btn:hover {
+    background: hsl(var(--primary));
+    border-color: hsl(var(--primary));
+    transform: rotate(180deg);
   }
 
   .preview-info {

@@ -54,6 +54,7 @@ class GameCard:
     attached_to: Optional[str] = None
     face_down: bool = False
     is_commander: bool = False
+    card_faces: Optional[list[dict]] = None
 
     def to_dict(self) -> dict:
         return {
@@ -75,6 +76,7 @@ class GameCard:
             "attachedTo": self.attached_to,
             "faceDown": self.face_down,
             "isCommander": self.is_commander,
+            "card_faces": self.card_faces,
         }
 
     def to_hidden_dict(self) -> dict:

@@ -79,6 +79,7 @@ async def _load_deck_cards(request: Request, deck_id: str, user_id: str) -> tupl
                 "colors": card_data.get("colors"),
                 "rarity": card_data.get("rarity", "common"),
                 "image_uri": card_data.get("image_uri"),
+                "card_faces": card_data.get("card_faces"),
                 "quantity": row[1],
                 "zone": row[2] or "mainboard",
                 "tags": row[3] or [],

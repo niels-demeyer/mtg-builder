@@ -114,6 +114,7 @@ function cardToGameCard(card: CardInDeck, zone: GameZone): GameCard {
     colors: card.colors,
     rarity: card.rarity,
     image_uri: card.image_uri,
+    card_faces: card.card_faces,
     zone,
     isTapped: false,
     counters: {},

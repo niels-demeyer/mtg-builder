@@ -1,3 +1,21 @@
+// Shared card face type (matches Scryfall card_faces structure)
+export interface CardFace {
+  name: string;
+  mana_cost?: string;
+  type_line?: string;
+  oracle_text?: string;
+  power?: string;
+  toughness?: string;
+  image_uris?: {
+    small: string;
+    normal: string;
+    large: string;
+    png: string;
+    art_crop: string;
+    border_crop: string;
+  };
+}
+
 // Scryfall API card type
 export interface ScryfallCard {
   id: string;
@@ -22,20 +40,7 @@ export interface ScryfallCard {
     art_crop: string;
     border_crop: string;
   };
-  card_faces?: Array<{
-    name: string;
-    mana_cost?: string;
-    type_line: string;
-    oracle_text?: string;
-    image_uris?: {
-      small: string;
-      normal: string;
-      large: string;
-      png: string;
-      art_crop: string;
-      border_crop: string;
-    };
-  }>;
+  card_faces?: CardFace[];
   prices: {
     usd?: string;
     usd_foil?: string;
@@ -67,6 +72,7 @@ export interface DbCard {
     art_crop: string;
     border_crop: string;
   };
+  card_faces?: CardFace[];
   legalities: Record<string, string>;
 }
 
@@ -111,6 +117,7 @@ export interface CardInDeck {
   colors?: string[];
   rarity: string;
   image_uri?: string;
+  card_faces?: CardFace[];
   quantity: number;
   zone: CardZone;
   tags: string[];
@@ -232,6 +239,7 @@ export interface GameCard {
   colors?: string[];
   rarity: string;
   image_uri?: string;
+  card_faces?: CardFace[];
   zone: GameZone;
   isTapped: boolean;
   counters: Record<string, number>;

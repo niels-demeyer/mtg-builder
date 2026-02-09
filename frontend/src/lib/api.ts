@@ -7,7 +7,7 @@ function getAuthHeader(): Record<string, string> {
 
 export async function apiFetch(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
 ): Promise<Response> {
   const headers = {
     "Content-Type": "application/json",

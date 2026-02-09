@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { DbCard } from '$lib/types';
+    import { isDFC, getFaceImage, getFaceData } from '$lib/cardUtils';
 
     interface Printing {
         id: string;
@@ -13,6 +14,13 @@
             normal: string;
             large: string;
         };
+        card_faces?: Array<{
+            image_uris?: {
+                small: string;
+                normal: string;
+                large: string;
+            };
+        }>;
         released_at: string;
     }
 
@@ -86,6 +94,12 @@
     let selectedPrintingIndex = $state(0);
     let currentPage = $state(1);
     let pagination = $state<Pagination | null>(null);
+    let showingBackFace = $state(false);
+
+    // Reset face when card changes
+    $effect(() => {
+        if (selectedCard) showingBackFace = false;
+    });
 
     function toggleColor(code: string): void {
         const newColors = new Set(filters.colors);
@@ -228,6 +242,10 @@
     function getCardImage(card: DbCard | Printing, size: 'small' | 'normal' | 'large' = 'normal'): string {
         if ('image_uris' in card && card.image_uris) {
             return card.image_uris[size] || card.image_uris.normal || card.image_uris.small || '';
+        }
+        if ('card_faces' in card && card.card_faces?.[0]?.image_uris) {
+            const faceUris = card.card_faces[0].image_uris;
+            return faceUris[size] || faceUris.normal || faceUris.small || '';
         }
         return '';
     }
@@ -550,9 +568,18 @@
         <div class="modal-content" onclick={(e) => e.stopPropagation()}>
             <button class="close-btn" onclick={closeModal}>×</button>
 
+            {#if selectedCard}
+            {@const faceSource = printings.length > 0 ? printings[selectedPrintingIndex] : selectedCard}
+            {@const faceIdx = showingBackFace ? 1 : 0}
+            {@const face = getFaceData(selectedCard, faceIdx)}
             <div class="modal-layout">
                 <div class="modal-image">
-                    {#if printings.length > 0}
+                    {#if isDFC(faceSource)}
+                        <img src={getFaceImage(faceSource, faceIdx, 'large')} alt={face.name} />
+                        <button class="flip-btn" onclick={() => showingBackFace = !showingBackFace} title="Flip card">
+                            &#x21BB;
+                        </button>
+                    {:else if printings.length > 0}
                         <img src={getCardImage(printings[selectedPrintingIndex], 'large')} alt={printings[selectedPrintingIndex].name} />
                     {:else if getCardImage(selectedCard, 'large')}
                         <img src={getCardImage(selectedCard, 'large')} alt={selectedCard.name} />
@@ -565,30 +592,30 @@
 
                 <div class="modal-details">
                     <div class="detail-header">
-                        <h2>{selectedCard.name}</h2>
+                        <h2>{face.name}</h2>
                         <div class="mana-cost large">
-                            {#each formatManaCost(selectedCard.mana_cost) as symbol}
+                            {#each formatManaCost(face.mana_cost) as symbol}
                                 <span class="mana-symbol {getManaSymbolClass(symbol)}">{symbol.replace(/[{}]/g, '')}</span>
                             {/each}
                         </div>
                     </div>
 
                     <div class="detail-type">
-                        <span class="type-line">{selectedCard.type_line}</span>
+                        <span class="type-line">{face.type_line}</span>
                         <span class="rarity-badge {getRarityClass(selectedCard.rarity)}">{selectedCard.rarity}</span>
                     </div>
 
-                    {#if selectedCard.oracle_text}
+                    {#if face.oracle_text}
                         <div class="oracle-text">
-                            {#each selectedCard.oracle_text.split('\n') as paragraph}
+                            {#each face.oracle_text.split('\n') as paragraph}
                                 <p>{paragraph}</p>
                             {/each}
                         </div>
                     {/if}
 
-                    {#if selectedCard.power && selectedCard.toughness}
+                    {#if face.power && face.toughness}
                         <div class="power-toughness">
-                            {selectedCard.power} / {selectedCard.toughness}
+                            {face.power} / {face.toughness}
                         </div>
                     {/if}
 
@@ -633,7 +660,7 @@
                                         onclick={() => selectPrinting(index)}
                                         title="{printing.set_name} ({printing.released_at})"
                                     >
-                                        <img src={printing.image_uris?.small || ''} alt={printing.set_name} />
+                                        <img src={printing.image_uris?.small || printing.card_faces?.[0]?.image_uris?.small || ''} alt={printing.set_name} />
                                     </button>
                                 {/each}
                             </div>
@@ -646,6 +673,7 @@
                     {/if}
                 </div>
             </div>
+            {/if}
         </div>
     </div>
 {/if}
@@ -1277,10 +1305,39 @@
         padding: 2rem;
     }
 
+    .modal-image {
+        position: relative;
+    }
+
     .modal-image img {
         width: 100%;
         border-radius: var(--radius-lg);
         box-shadow: var(--shadow-lg);
+    }
+
+    .flip-btn {
+        position: absolute;
+        bottom: 0.5rem;
+        right: 0.5rem;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: hsl(0 0% 0% / 0.7);
+        color: white;
+        border: 2px solid hsl(0 0% 100% / 0.3);
+        font-size: 1.25rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s ease;
+        backdrop-filter: blur(4px);
+    }
+
+    .flip-btn:hover {
+        background: hsl(var(--primary));
+        border-color: hsl(var(--primary));
+        transform: rotate(180deg);
     }
 
     .modal-image .card-placeholder.large {

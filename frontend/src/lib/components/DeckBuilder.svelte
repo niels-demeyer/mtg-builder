@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import { deckStore, flushPendingSave } from '../../stores/deckStore';
   import type { ScryfallCard, CardInDeck, CardZone, DisplayMode, PileSortBy } from '$lib/types';
+  import { isDFC, getFaceImage, getFaceData } from '$lib/cardUtils';
   import { downloadDeckAsTxt, parseDeckTxt, type ParsedDeck } from '$lib/deckTxt';
 
   // Flush any pending saves when leaving the deck builder
@@ -85,6 +86,12 @@
   // Hover preview state
   let hoveredCard = $state<ScryfallCard | null>(null);
   let hoverPosition = $state({ x: 0, y: 0 });
+  let hoverFlipped = $state(false);
+
+  // Reset flip when hovered card changes
+  $effect(() => {
+    if (hoveredCard) hoverFlipped = false;
+  });
 
   // Import/Export state
   let fileInput: HTMLInputElement | undefined = $state();
@@ -319,6 +326,7 @@
       colors,
       rarity: card.rarity,
       image_uri: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal,
+      card_faces: card.card_faces,
     };
     deckStore.addCard(cardInDeck, 1, zone, []);
   }
@@ -525,6 +533,7 @@
               colors,
               rarity: match.rarity,
               image_uri: match.image_uris?.normal || match.card_faces?.[0]?.image_uris?.normal,
+              card_faces: match.card_faces,
             };
             deckStore.addCard(cardInDeck, card.quantity, card.zone, []);
             importedCount++;
@@ -1007,24 +1016,36 @@
 
   <!-- Hover Preview -->
   {#if hoveredCard}
+    {@const hoverFaceIdx = hoverFlipped ? 1 : 0}
+    {@const hoverFace = getFaceData(hoveredCard, hoverFaceIdx)}
     <div
       class="hover-preview"
       style="left: {hoverPosition.x}px; top: {hoverPosition.y}px;"
     >
       <div class="hover-preview-image">
-        <img
-          src={hoveredCard.image_uris?.normal || hoveredCard.card_faces?.[0]?.image_uris?.normal || ''}
-          alt={hoveredCard.name}
-        />
+        {#if isDFC(hoveredCard)}
+          <img
+            src={getFaceImage(hoveredCard, hoverFaceIdx)}
+            alt={hoverFace.name}
+          />
+          <button class="flip-btn" onclick={(e) => { e.stopPropagation(); hoverFlipped = !hoverFlipped; }} title="Flip card">
+            &#x21BB;
+          </button>
+        {:else}
+          <img
+            src={hoveredCard.image_uris?.normal || hoveredCard.card_faces?.[0]?.image_uris?.normal || ''}
+            alt={hoveredCard.name}
+          />
+        {/if}
       </div>
       <div class="hover-preview-details">
-        <h4>{hoveredCard.name}</h4>
-        <p class="hover-type">{hoveredCard.type_line}</p>
-        {#if hoveredCard.oracle_text}
-          <p class="hover-oracle">{hoveredCard.oracle_text}</p>
+        <h4>{hoverFace.name}</h4>
+        <p class="hover-type">{hoverFace.type_line}</p>
+        {#if hoverFace.oracle_text}
+          <p class="hover-oracle">{hoverFace.oracle_text}</p>
         {/if}
         <div class="hover-stats">
-          <span class="hover-mana">{hoveredCard.mana_cost || 'No cost'}</span>
+          <span class="hover-mana">{hoverFace.mana_cost || 'No cost'}</span>
           <span class="hover-rarity rarity-{hoveredCard.rarity}">{hoveredCard.rarity}</span>
         </div>
       </div>
@@ -2135,6 +2156,32 @@
 
   .hover-preview-image {
     flex-shrink: 0;
+    position: relative;
+  }
+
+  .hover-preview-image .flip-btn {
+    position: absolute;
+    bottom: 0.4rem;
+    right: 0.4rem;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: hsl(0 0% 0% / 0.7);
+    color: white;
+    border: 2px solid hsl(0 0% 100% / 0.3);
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    backdrop-filter: blur(4px);
+  }
+
+  .hover-preview-image .flip-btn:hover {
+    background: hsl(var(--primary));
+    border-color: hsl(var(--primary));
+    transform: rotate(180deg);
   }
 
   .hover-preview-image img {

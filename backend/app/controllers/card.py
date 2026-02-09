@@ -132,7 +132,7 @@ class CardController:
             data_query = f"""
                 SELECT id, name, mana_cost, cmc, power, toughness, type_line,
                        oracle_text, colors, color_identity, rarity, keywords,
-                       set_id, set_name, image_uris, legalities
+                       set_id, set_name, image_uris, legalities, card_faces, layout
                 FROM cards
                 WHERE {where_clause}
                 ORDER BY name
@@ -154,7 +154,7 @@ class CardController:
             for row in rows:
                 data = dict(row._mapping)
                 # Parse JSON string fields
-                for field in ('image_uris', 'legalities', 'colors', 'color_identity', 'keywords'):
+                for field in ('image_uris', 'legalities', 'colors', 'color_identity', 'keywords', 'card_faces'):
                     if field in data and isinstance(data[field], str) and data[field]:
                         try:
                             data[field] = json.loads(data[field])
@@ -209,6 +209,12 @@ class CardController:
 
                 printings = []
                 for card in scryfall_data.get("data", []):
+                    # For DFCs, image_uris is inside card_faces instead of top-level
+                    image_uris = card.get("image_uris")
+                    card_faces = card.get("card_faces")
+                    if not image_uris and card_faces:
+                        image_uris = card_faces[0].get("image_uris") if card_faces else None
+
                     printings.append({
                         "id": card.get("id"),
                         "name": card.get("name"),
@@ -216,7 +222,8 @@ class CardController:
                         "set_code": card.get("set"),
                         "collector_number": card.get("collector_number"),
                         "rarity": card.get("rarity"),
-                        "image_uris": card.get("image_uris"),
+                        "image_uris": image_uris,
+                        "card_faces": card_faces,
                         "released_at": card.get("released_at"),
                     })
 
@@ -240,7 +247,8 @@ class CardController:
         result = await session.execute(
             sql_text("""
                 SELECT id, name, mana_cost, cmc, power, toughness, type_line, oracle_text,
-                       colors, color_identity, rarity, keywords, set_id, set_name, image_uris, legalities
+                       colors, color_identity, rarity, keywords, set_id, set_name, image_uris, legalities,
+                       card_faces, layout
                 FROM cards
                 WHERE LOWER(name) = ANY(:names)
             """),
@@ -249,6 +257,12 @@ class CardController:
         row = result.first()
         if row:
             data = dict(row._mapping)
+            for field in ('image_uris', 'legalities', 'colors', 'color_identity', 'keywords', 'card_faces'):
+                if field in data and isinstance(data[field], str) and data[field]:
+                    try:
+                        data[field] = json.loads(data[field])
+                    except json.JSONDecodeError:
+                        pass
             card = DbCard(**data)
             return {"status": "found", **asdict(card)}
         else:

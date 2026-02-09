@@ -49,6 +49,7 @@ class CardPrinting(BaseModel):
     collector_number: str
     rarity: str
     image_uris: Optional[Dict[str, str]] = None
+    card_faces: Optional[List[Dict[str, Any]]] = None
     released_at: Optional[str] = None
 
 

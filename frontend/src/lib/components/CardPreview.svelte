@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { CardInDeck, CardZone } from '$lib/types';
+  import { isDFC, getFaceImage, getFaceData } from '$lib/cardUtils';
   import { deckStore } from '../../stores/deckStore';
 
   interface Props {
@@ -12,6 +13,12 @@
 
   let showTagInput = $state(false);
   let newTag = $state('');
+  let showingBackFace = $state(false);
+
+  // Reset face when card changes
+  $effect(() => {
+    if (card) showingBackFace = false;
+  });
 
   const predefinedTags = ['Ramp', 'Removal', 'Win Con', 'Draw', 'Protection', 'Tutor', 'Board Wipe', 'Counter', 'Recursion'];
 
@@ -65,8 +72,11 @@
 
 <div class="card-preview" class:is-modal={isModal}>
   {#if card}
+    {@const faceIdx = showingBackFace ? 1 : 0}
+    {@const face = getFaceData(card, faceIdx)}
+    {@const faceImage = isDFC(card) ? getFaceImage(card, faceIdx) : card.image_uri}
     <div class="preview-header">
-      <h3 title={card.name}>{card.name}</h3>
+      <h3 title={face.name}>{face.name}</h3>
       {#if onClose}
         <button class="close-btn" onclick={onClose} aria-label="Close preview">✕</button>
       {/if}
@@ -74,8 +84,13 @@
 
     <div class="preview-content">
       <div class="preview-image">
-        {#if card.image_uri}
-          <img src={card.image_uri} alt={card.name} loading="lazy" />
+        {#if faceImage}
+          <img src={faceImage} alt={face.name} loading="lazy" />
+          {#if isDFC(card)}
+            <button class="flip-btn" onclick={() => showingBackFace = !showingBackFace} title="Flip card">
+              &#x21BB;
+            </button>
+          {/if}
         {:else}
           <div class="no-image">
             <span>No image available</span>
@@ -86,18 +101,18 @@
       <div class="card-info">
         <!-- Type Line -->
         <div class="info-section type-section">
-          <span class="type-line">{card.type_line}</span>
-          {#if card.power && card.toughness && isCreature(card.type_line)}
-            <span class="power-toughness">{card.power}/{card.toughness}</span>
+          <span class="type-line">{face.type_line}</span>
+          {#if face.power && face.toughness && isCreature(face.type_line)}
+            <span class="power-toughness">{face.power}/{face.toughness}</span>
           {/if}
         </div>
 
         <!-- Stats Row -->
         <div class="stats-row">
-          {#if card.mana_cost}
+          {#if face.mana_cost}
             <div class="stat">
               <span class="stat-label">Mana</span>
-              <span class="stat-value mana-cost">{card.mana_cost}</span>
+              <span class="stat-value mana-cost">{face.mana_cost}</span>
             </div>
           {/if}
           <div class="stat">
@@ -111,11 +126,11 @@
         </div>
 
         <!-- Oracle Text -->
-        {#if card.oracle_text}
+        {#if face.oracle_text}
           <div class="info-section oracle-section">
             <h4>Card Text</h4>
             <div class="oracle-text">
-              {#each card.oracle_text.split('\n') as paragraph}
+              {#each face.oracle_text.split('\n') as paragraph}
                 <p>{paragraph}</p>
               {/each}
             </div>
@@ -123,7 +138,7 @@
         {/if}
 
         <!-- Flavor Text -->
-        {#if card.flavor_text}
+        {#if !showingBackFace && card.flavor_text}
           <div class="info-section flavor-section">
             <div class="flavor-text">
               {#each card.flavor_text.split('\n') as paragraph}
@@ -286,6 +301,32 @@
     justify-content: center;
     flex-shrink: 0;
     background: hsl(var(--secondary) / 0.3);
+    position: relative;
+  }
+
+  .flip-btn {
+    position: absolute;
+    bottom: 1.25rem;
+    right: 1.25rem;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: hsl(0 0% 0% / 0.7);
+    color: white;
+    border: 2px solid hsl(0 0% 100% / 0.3);
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    backdrop-filter: blur(4px);
+  }
+
+  .flip-btn:hover {
+    background: hsl(var(--primary));
+    border-color: hsl(var(--primary));
+    transform: rotate(180deg);
   }
 
   .preview-image img {

@@ -5,7 +5,7 @@ Request and response schemas for deck management endpoints.
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 
 
 class CardInDeck(BaseModel):
@@ -18,6 +18,7 @@ class CardInDeck(BaseModel):
     colors: Optional[List[str]] = None
     rarity: str = "common"
     image_uri: Optional[str] = None
+    card_faces: Optional[List[Dict[str, Any]]] = None
     quantity: int = 1
     zone: str = "mainboard"
     tags: List[str] = []

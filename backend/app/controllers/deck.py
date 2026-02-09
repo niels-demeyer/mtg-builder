@@ -20,10 +20,29 @@ class DeckController:
 
     @staticmethod
     def _parse_card_data(card_row: tuple) -> CardInDeck:
-        """Parse a card row from database into CardInDeck view."""
+        """Parse a card row from database into CardInDeck view.
+
+        Expected columns: card_id, quantity, zone, tags, is_commander, card_data, image_uris, card_faces (from cards table)
+        """
         card_data = card_row[5] if card_row[5] else {}
         if isinstance(card_data, str):
             card_data = json.loads(card_data)
+
+        # Resolve image_uri: use stored value, fall back to cards table image_uris (handles DFCs)
+        image_uri = card_data.get("image_uri")
+        if not image_uri and len(card_row) > 6 and card_row[6]:
+            fallback = card_row[6]
+            if isinstance(fallback, str):
+                fallback = json.loads(fallback)
+            if isinstance(fallback, dict):
+                image_uri = fallback.get("normal") or fallback.get("small")
+
+        # Resolve card_faces: use stored value, fall back to cards table
+        card_faces = card_data.get("card_faces")
+        if not card_faces and len(card_row) > 7 and card_row[7]:
+            card_faces = card_row[7]
+            if isinstance(card_faces, str):
+                card_faces = json.loads(card_faces)
 
         return CardInDeck(
             id=card_row[0],
@@ -33,7 +52,8 @@ class DeckController:
             type_line=card_data.get("type_line", ""),
             colors=card_data.get("colors"),
             rarity=card_data.get("rarity", "common"),
-            image_uri=card_data.get("image_uri"),
+            image_uri=image_uri,
+            card_faces=card_faces,
             quantity=card_row[1],
             zone=card_row[2] or "mainboard",
             tags=card_row[3] or [],
@@ -51,6 +71,7 @@ class DeckController:
             "colors": card.colors,
             "rarity": card.rarity,
             "image_uri": card.image_uri,
+            "card_faces": card.card_faces,
         })
 
     @staticmethod
@@ -72,12 +93,13 @@ class DeckController:
         for deck_row in deck_rows:
             deck_id = str(deck_row[0])
 
-            # Get cards for this deck
+            # Get cards for this deck (JOIN cards table for image fallback on DFCs)
             cards_result = await session.execute(
                 text("""
-                    SELECT card_id, quantity, zone, tags, is_commander, card_data
-                    FROM deck_cards
-                    WHERE deck_id = CAST(:deck_id AS uuid)
+                    SELECT dc.card_id, dc.quantity, dc.zone, dc.tags, dc.is_commander, dc.card_data, c.image_uris, c.card_faces
+                    FROM deck_cards dc
+                    LEFT JOIN cards c ON dc.card_id = c.id
+                    WHERE dc.deck_id = CAST(:deck_id AS uuid)
                 """),
                 {"deck_id": deck_id},
             )
@@ -178,12 +200,13 @@ class DeckController:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Deck not found"
             )
 
-        # Get cards in deck
+        # Get cards in deck (JOIN cards table for image fallback on DFCs)
         result = await session.execute(
             text("""
-                SELECT card_id, quantity, zone, tags, is_commander, card_data
-                FROM deck_cards
-                WHERE deck_id = CAST(:deck_id AS uuid)
+                SELECT dc.card_id, dc.quantity, dc.zone, dc.tags, dc.is_commander, dc.card_data, c.image_uris, c.card_faces
+                FROM deck_cards dc
+                LEFT JOIN cards c ON dc.card_id = c.id
+                WHERE dc.deck_id = CAST(:deck_id AS uuid)
             """),
             {"deck_id": deck_id},
         )
@@ -273,12 +296,13 @@ class DeckController:
                 )
                 cards.append(card)
         else:
-            # Fetch existing cards
+            # Fetch existing cards (JOIN cards table for image fallback on DFCs)
             result = await session.execute(
                 text("""
-                    SELECT card_id, quantity, zone, tags, is_commander, card_data
-                    FROM deck_cards
-                    WHERE deck_id = CAST(:deck_id AS uuid)
+                    SELECT dc.card_id, dc.quantity, dc.zone, dc.tags, dc.is_commander, dc.card_data, c.image_uris, c.card_faces
+                    FROM deck_cards dc
+                    LEFT JOIN cards c ON dc.card_id = c.id
+                    WHERE dc.deck_id = CAST(:deck_id AS uuid)
                 """),
                 {"deck_id": deck_id},
             )

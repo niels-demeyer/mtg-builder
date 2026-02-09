@@ -60,6 +60,7 @@ def _card_from_deck_data(card_data: dict, zone: GameZone) -> GameCard:
         image_uri=card_data.get("image_uri"),
         zone=zone,
         is_commander=card_data.get("isCommander", False),
+        card_faces=card_data.get("card_faces"),
     )
 
 

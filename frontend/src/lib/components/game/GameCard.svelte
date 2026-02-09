@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { GameCard, GameZone } from "$lib/types";
+  import { isDFC, getFaceImage } from "$lib/cardUtils";
 
   interface Props {
     card: GameCard;
@@ -29,6 +30,13 @@
   let previewX = $state(0);
   let previewY = $state(0);
   let previewPosition = $state<"above" | "below">("above");
+  let isFlipped = $state(false);
+
+  const cardIsDFC = $derived(isDFC(card));
+  const activeFaceIdx = $derived(isFlipped ? 1 : 0);
+  const activeImage = $derived(
+    cardIsDFC ? getFaceImage(card, activeFaceIdx) : (card.image_uri || "")
+  );
 
   const sizeClasses = {
     small: "card-small",
@@ -105,7 +113,7 @@
 
   const hasCounters = $derived(countersDisplay.length > 0);
 
-  const showPreview = $derived(isHovered && !card.faceDown && !!card.image_uri);
+  const showPreview = $derived(isHovered && !card.faceDown && !!activeImage);
 
   // Portal action: moves element to document.body to escape CSS containing blocks
   // (transforms on ancestors break position:fixed)
@@ -141,16 +149,23 @@
     </div>
   {:else}
     <img
-      src={card.image_uri || "/card-placeholder.png"}
+      src={activeImage || "/card-placeholder.png"}
       alt={card.name}
       class="card-image"
       loading="lazy"
     />
 
-    {#if showOverlay && (card.isTapped || hasCounters || card.isCommander)}
+    {#if showOverlay && (card.isTapped || hasCounters || card.isCommander || cardIsDFC)}
       <div class="card-overlay">
         {#if card.isCommander}
           <span class="commander-badge">CMD</span>
+        {/if}
+        {#if cardIsDFC}
+          <button
+            class="flip-badge"
+            onclick={(e) => { e.stopPropagation(); isFlipped = !isFlipped; }}
+            title="Transform"
+          >&#x21BB;</button>
         {/if}
         {#if hasCounters}
           <div class="counters">
@@ -167,7 +182,7 @@
 {#if showPreview}
   <div class="hover-preview" style={previewStyle} use:portal>
     <img
-      src={card.image_uri}
+      src={activeImage}
       alt={card.name}
       class="preview-image"
     />
@@ -251,6 +266,36 @@
     flex-direction: column;
     padding: 0.25rem;
     gap: 0.25rem;
+  }
+
+  .flip-badge {
+    position: absolute;
+    top: 0.25rem;
+    left: 0.25rem;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.75);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    font-size: 0.75rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    transition: all 0.15s ease;
+    opacity: 0;
+  }
+
+  .game-card:hover .flip-badge {
+    opacity: 1;
+  }
+
+  .flip-badge:hover {
+    background: hsl(var(--primary));
+    border-color: hsl(var(--primary));
+    transform: rotate(180deg);
   }
 
   .commander-badge {
